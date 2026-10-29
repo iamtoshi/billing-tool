@@ -1,13 +1,13 @@
 // POST /api/report  - "Report a problem" from the billing app.
-// Runs on Cloudflare next to the app. It holds the Linear key, so the key never ships inside the app.
-// Needs two settings on the Cloudflare Pages project (Settings > Variables and Secrets):
-//   LINEAR_API_KEY   a Linear personal API key (secret)
-//   LINEAR_TEAM_ID   the Linear team the issues go to
+// Runs on Cloudflare next to the app (worker/index.js routes /api/report here). It holds the Linear key,
+// so the key never ships inside the app. Settings on the "billing" Worker:
+//   LINEAR_API_KEY   a Linear personal API key - a Secret, set in the dashboard (Settings > Variables and Secrets)
+//   LINEAR_TEAM_ID   the Linear team the issues go to - set in wrangler.jsonc
 // Optional: LINEAR_PROJECT_ID to file them under one project.
 
 const MAX_TEXT = 4000;
 
-export async function onRequestPost({ request, env }) {
+export async function handleReport(request, env) {
   if (!env.LINEAR_API_KEY || !env.LINEAR_TEAM_ID) return json({ ok: false, error: 'not_configured' }, 503);
   let r;
   try { r = await request.json(); } catch (e) { return json({ ok: false, error: 'bad_json' }, 400); }
@@ -45,8 +45,6 @@ export async function onRequestPost({ request, env }) {
   if (!out || !out.success) return json({ ok: false, error: 'linear', detail: (res && res.errors && res.errors[0] && res.errors[0].message) || '' }, 502);
   return json({ ok: true, issue: out.issue.identifier, url: out.issue.url });
 }
-
-export async function onRequest() { return json({ ok: false, error: 'use POST' }, 405); }
 
 async function linear(env, query, variables) {
   const r = await fetch('https://api.linear.app/graphql', {

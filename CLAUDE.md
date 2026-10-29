@@ -3,16 +3,16 @@
 Offline billing app for **Deo Ratan Agro Foods Pvt. Ltd., Sukhisewania, Bhopal**. Owner: Toshi (designer, CS background). Users: the office team, not tech-savvy, one Windows laptop, Chrome, often **without internet**.
 
 ## How it is built
-- `app/` is the whole site (plain HTML/CSS/JS, no build step). Hosted on **Cloudflare Pages**, output directory `app`.
+- `app/` is the whole site (plain HTML/CSS/JS, no build step). Hosted as the Cloudflare **Worker "billing"** with static assets, at `https://billing.deoratan.workers.dev`. `wrangler.jsonc` is its config; Cloudflare Workers Builds deploys from GitHub (`main` → production, any other branch → a preview URL via `wrangler versions upload`).
 - `app/app.js` is the app. `app/sw.js` is the service worker (offline copy). `app/vendor/` has html2canvas, jsPDF, xlsx-js-style.
-- `functions/api/report.js` is a Cloudflare Pages Function: the in-app **Report a problem** button posts here and it files a **Linear** issue. Needs Pages settings `LINEAR_API_KEY` (secret) and `LINEAR_TEAM_ID`.
+- `worker/index.js` serves `app/` and routes `/api/report` to `worker/report.js`: the in-app **Report a problem** button posts there and it files a **Linear** issue in team **billing-tool (BIL)**. `LINEAR_TEAM_ID` is in `wrangler.jsonc`; `LINEAR_API_KEY` is a Secret on the Worker (dashboard), never in the repo. Only `/api/*` runs Worker code; everything else is a free static request.
 - Bills are **not** on Cloudflare. They live in `bills-data.json` in a folder on the office laptop (Google Drive folder) via the File System Access API, with daily backups. Deploying never touches bills.
 - The app writes, after every save: `Aata sale statement.xlsx`, `Grain sale statement.xlsx` (tab per grain), `Grain purchase statement.xlsx` (tab per grain incl. Dhan), `Master statement.xlsx` (all tabs), and PDFs in `Invoices/`.
 
 ## Release rules (always)
 1. Every change ships with a bump of `VERSION` in `app/sw.js` (format `YYYY-MM-DD.N`). Without it the laptop never gets the update.
 2. Run the full suite and the offline PDF tests (below). All must pass, no JS errors.
-3. Work on a branch, open a PR. Cloudflare gives the branch a preview URL; send it to Toshi.
+3. Work on a branch, open a PR. Cloudflare builds the branch and posts a preview URL on the PR; send it to Toshi. (The preview runs the same code, but its browser data and folder choice are separate from the office laptop.)
 4. **Never merge to `main` (= production) without Toshi's explicit "deploy".**
 5. Flag clearly in the PR any change to money maths (rates, GST, deductions, labour, rounding), even when tests pass.
 6. Never change the shape of saved bills without code that reads old bills too (old bills must open, print and total the same).
@@ -32,6 +32,7 @@ Offline billing app for **Deo Ratan Agro Foods Pvt. Ltd., Sukhisewania, Bhopal**
 ```
 npm install            # playwright (uses the preinstalled Chromium in Claude's workspace)
 npm run serve          # app + /api/report with Linear faked, on :8770
+npx wrangler dev       # the real Worker runtime locally (report endpoint says not_configured without the key)
 npm test               # full suite: ~200 checks, every amount against an independent calculation
 node tests/report.mjs http://localhost:8770/ test-output test-output/issues.json
 python3 tests/cfserve.py app 8766 &   # Cloudflare-style caching

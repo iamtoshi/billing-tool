@@ -2,3 +2,4 @@ node_modules
 test-output/
 *.zip
 .DS_Store
+.wrangler

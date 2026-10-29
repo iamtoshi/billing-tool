@@ -1,0 +1,17 @@
+{
+  // Cloudflare reads this when GitHub changes are deployed. The name must match the Worker in the dashboard.
+  "name": "billing",
+  "main": "worker/index.js",
+  "compatibility_date": "2026-09-01",
+  "assets": {
+    "directory": "./app",
+    "binding": "ASSETS",
+    "run_worker_first": ["/api/*"]
+  },
+  // Every branch other than main gets its own preview address to test on.
+  "preview_urls": true,
+  "workers_dev": true,
+  // The Linear team that receives reports (billing-tool, BIL). The Linear key is a Secret set in the dashboard.
+  "vars": { "LINEAR_TEAM_ID": "081e99c0-3483-4b35-a7bd-200b350e92ec" },
+  "keep_vars": true
+}

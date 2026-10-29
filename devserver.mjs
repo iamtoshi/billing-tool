@@ -1,5 +1,5 @@
 // Local test server: serves app/ and runs functions/api/report.js like Cloudflare does, with Linear faked.
-import http from 'http'; import fs from 'fs'; import path from 'path'; import { onRequestPost } from './functions/api/report.js';
+import http from 'http'; import fs from 'fs'; import path from 'path'; import { handleReport } from './worker/report.js';
 const ROOT = process.argv[2], PORT = +process.argv[3], LOG = process.argv[4];
 const issues = []; let n = 0;
 const realFetch = globalThis.fetch;
@@ -16,7 +16,7 @@ const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/cs
 http.createServer(async (req, res) => {
   if (req.url.startsWith('/api/report')) {
     let body = ''; for await (const c of req) body += c;
-    const r = await onRequestPost({ request: new Request('http://x/api/report', { method: 'POST', body }), env: { LINEAR_API_KEY: 'k', LINEAR_TEAM_ID: 't' } });
+    const r = await handleReport(new Request('http://x/api/report', { method: 'POST', body }), { LINEAR_API_KEY: 'k', LINEAR_TEAM_ID: 't' });
     res.writeHead(r.status, { 'Content-Type': 'application/json' }); res.end(await r.text()); return;
   }
   let f = path.join(ROOT, decodeURIComponent(req.url.split('?')[0])); if (f.endsWith('/')) f += 'index.html';
