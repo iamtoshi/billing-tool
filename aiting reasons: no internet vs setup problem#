@@ -1,2 +1,0 @@
-node tests/report.mjs http://localhost:8770/ test-output test-output/issues.json
-node tests/report-status.mjs http://localhost:8770/ test-output   
