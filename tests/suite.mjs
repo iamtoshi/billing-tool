@@ -43,7 +43,7 @@ await ctx.addInitScript(() => { window.showDirectoryPicker = async () => (await 
 const page = await ctx.newPage();
 const errors = [];
 page.on('pageerror', e => errors.push('pageerror: ' + e.message));
-page.on('console', m => { if (m.type() === 'error') errors.push('console: ' + m.text()); });
+page.on('console', m => { if (m.type() === 'error' && !m.text().includes('ERR_INTERNET_DISCONNECTED')) errors.push('console: ' + m.text()); });   // network tries while the test is offline are expected
 page.on('dialog', d => { errors.push('native dialog: ' + d.message()); d.dismiss(); });
 const p = page;
 const H = (n) => p.getByRole('heading', { name: n, exact: true });
