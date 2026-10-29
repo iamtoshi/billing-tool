@@ -7,3 +7,5 @@ Offline billing app for Deo Ratan Agro Foods (Aata bills, grain sales and purcha
 - `tests/` — end-to-end tests (Playwright). See `CLAUDE.md` for rules, testing and the release process.
 
 `main` is production (https://billing.deoratan.workers.dev). Every other branch gets a Cloudflare preview URL.
+
+Deploys: pushes to `main` build and go live automatically through Cloudflare Workers Builds.
