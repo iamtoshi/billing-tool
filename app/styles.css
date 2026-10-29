@@ -332,3 +332,17 @@ table.list.ledger{min-width:860px}
 .rpcount.bad{color:var(--bad-fg)}
 .rpstatus{padding:10px 12px;border-radius:var(--r);background:var(--warn-bg);color:var(--warn-fg);font-size:14px;display:flex;flex-wrap:wrap;gap:6px 8px;align-items:center}
 .rpstatus.bad{background:var(--bad-bg);color:var(--bad-fg)}
+
+/* Halloween (BIL-3): colours only, applied by index.html in October 2026. The bill paper keeps its own black on white. */
+html.halloween{
+  --bg:#1B1022; --surface:#2A1836; --sunk:#231330; --fg:#F7ECDD; --muted:#CDB9DA; --line:#4B3060; --line-strong:#FF9A3C;
+  --brand:#F26B0F; --brand-fg:#1B1022; --brand-soft:#3B2247; --brand-ink:#FFA859;
+  --ok-bg:#1F3A25; --ok-fg:#BFE8C0; --warn-bg:#4A3510; --warn-fg:#FFD98A; --bad-bg:#4F1F25; --bad-fg:#FFB4A6; --bad-solid:#C93A22; --bad-solid-fg:#FFFFFF;
+  --info-bg:#27305E; --info-fg:#C5D3FF; --focus:#FFD166; --scrim:rgba(8,4,12,.7);
+  color-scheme:dark;
+}
+html.halloween .brand b::before{content:"\1F383  "}
+html.halloween .bar{border-bottom-color:var(--brand)}
+html.halloween .brand span::after{content:"  \00B7  Happy Halloween \1F47B";color:var(--brand-ink)}
+/* the bill and its preview stay exactly as printed */
+html.halloween .paperbox,html.halloween .inv{color-scheme:light}

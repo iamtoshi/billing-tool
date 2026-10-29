@@ -80,3 +80,6 @@ D. IF SOMETHING LOOKS WRONG
 E. SHIPPING A NEW VERSION (for whoever updates the app)
 - Change the VERSION line at the top of sw.js, then upload the files to Cloudflare again.
 - Open apps show "A new version of the app is ready - Update now". Bills are not affected.
+
+HALLOWEEN LOOK (October 2026 only)
+The screens turn dark purple and orange with a pumpkin until 31 October. On 1 November the app goes back to its normal look by itself. Bills, PDFs and Excel files are never changed.
