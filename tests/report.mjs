@@ -30,6 +30,8 @@ console.log('back online:', await p.locator('#reportBtn').innerText());
 const issues = JSON.parse(fs.readFileSync(process.argv[4]));
 console.log('issues filed:', issues.length); issues.forEach(i => console.log('  ', i.identifier, '|', i.title, '|', i.description.split('\n').filter(l => l.startsWith('**')).join(' ; ')));
 // 3. the same report sent twice makes one issue
+const fresh = await p.evaluate(async () => { const mk = (id,t) => fetch('api/report',{method:'POST',body:JSON.stringify({id, kind:'idea', text:t, name:'X', when:'now', version:'t', context:{}})}).then(r=>r.json()); const a = await mk('fuzzA','fuzzy one'); const b2 = await mk('fuzzB','fuzzy two'); return [a.issue, b2.issue, b2.duplicate]; });
+if (fresh[0]===fresh[1] || fresh[2]) { console.log('FAIL two different reports became one issue', fresh); process.exitCode=1; } else console.log('ok: a new report is never mistaken for an old one', fresh);
 const dup = await p.evaluate(async () => { const r = {id:'fixed1', kind:'problem', text:'duplicate check text', name:'X', when:'now', version:'t', context:{}}; const a = await (await fetch('api/report',{method:'POST',body:JSON.stringify(r)})).json(); const b2 = await (await fetch('api/report',{method:'POST',body:JSON.stringify(r)})).json(); return [a.issue, b2.issue, b2.duplicate]; });
 console.log('sent twice →', JSON.stringify(dup));
 console.log('errors', errs); await b.close();

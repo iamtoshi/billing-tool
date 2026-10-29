@@ -6,7 +6,7 @@ const realFetch = globalThis.fetch;
 globalThis.fetch = async (url, opt) => {
   if (String(url).includes('api.linear.app')) {
     const { query, variables } = JSON.parse(opt.body);
-    if (query.includes('searchIssues')) { const hit = issues.find(i => i.description.includes(variables.q)); return new Response(JSON.stringify({ data: { searchIssues: { nodes: hit ? [{ identifier: hit.identifier, url: 'x' }] : [] } } })); }
+    if (query.includes('searchIssues')) { /* like real Linear: fuzzy - any issue that mentions 'report:' comes back, newest first */ const nodes = issues.filter(i => i.description.includes('report:')).reverse().map(i => ({ identifier: i.identifier, url: 'x', description: i.description })); return new Response(JSON.stringify({ data: { searchIssues: { nodes } } })); }
     // like Linear: a team id that isn't a UUID is refused
     if (!/^[0-9a-f-]{36}$/.test(variables.input.teamId)) return new Response(JSON.stringify({ errors: [{ message: 'Argument Validation Error' }] }));
     const i = Object.assign({ identifier: 'DRB-' + (++n) }, variables.input); issues.push(i); fs.mkdirSync(path.dirname(LOG), {recursive:true}); fs.writeFileSync(LOG, JSON.stringify(issues, null, 1));

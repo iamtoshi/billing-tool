@@ -40,8 +40,10 @@ export async function handleReport(request, env) {
 
   // already filed? (the app retries after a lost connection)
   if (id) {
-    const found = await linear(env, `query($q:String!){ searchIssues(term:$q, first:1){ nodes{ identifier url } } }`, { q: 'report:' + id }).catch(() => null);
-    const hit = found && found.data && found.data.searchIssues && found.data.searchIssues.nodes[0];
+    const found = await linear(env, `query($q:String!){ searchIssues(term:$q, first:10){ nodes{ identifier url description } } }`, { q: 'report:' + id }).catch(() => null);
+    // Linear search is fuzzy: only an issue that really carries this exact report id counts as the same report
+    const tag = '`report:' + id + '`';
+    const hit = found && found.data && found.data.searchIssues && found.data.searchIssues.nodes.find(n => String(n.description || '').includes(tag));
     if (hit) return json({ ok: true, issue: hit.identifier, url: hit.url, duplicate: true });
   }
 
