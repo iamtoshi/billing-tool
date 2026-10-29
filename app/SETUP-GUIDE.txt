@@ -1,0 +1,82 @@
+DEO RATAN BILLING - SETUP GUIDE
+================================
+
+A. PUT IT ONLINE (once, by Toshi)
+1. Cloudflare dashboard > Workers & Pages > Create > Pages > Upload assets.
+2. Give it a name (e.g. deoratan-billing) and drag in this zip (or the unzipped folder).
+3. Deploy. You get an address like https://deoratan-billing.pages.dev
+
+B. SET UP THE OFFICE LAPTOP (once, needs internet)
+1. Install Google Drive for desktop and sign in with the business Google account.
+   It appears as "Google Drive" in File Explorer.
+2. In File Explorer: Google Drive > My Drive > create a folder "Deo Ratan Billing".
+   Right-click it > Offline access > Available offline.
+3. Open Google Chrome and go to the app's address.
+4. Click "Install app" (top right of the app, or the install icon in Chrome's address bar).
+   The app now has its own icon on the desktop / Start menu.
+5. In the app: Choose folder > pick Google Drive > My Drive > Deo Ratan Billing > Select Folder.
+   When Chrome asks, click "Edit files". If it offers "Allow on every visit", pick that.
+
+C. EVERY DAY
+- Open "Deo Ratan Billing" from the Start menu. Works with or without internet.
+- Bills save automatically into the Deo Ratan Billing folder; Google Drive uploads them when online.
+- In that folder:  bills-data.json (the bills - don't edit or delete)
+                   Aata sale statement.xlsx (Aata bills, including chapad)
+                   Grain sale statement.xlsx (a tab for each grain: Wheat, Tewda, Chana, Soybean)
+                   Grain purchase statement.xlsx (a tab for each grain, plus Dhan)
+                   Master statement.xlsx (everything above in one file, as tabs)
+                   All four update after every change - open them any time. The Aata page downloads the
+                   Aata statement; the Grains page downloads the grain sale and purchase statements; both
+                   pages can download the master statement.
+                   Invoices (a PDF of every invoice and purchase slip)
+                   Backups (one copy per day, last 30 days)
+- Download bill (PDF) puts 3 copies on one A4 page in the Downloads folder: cut on the dashed lines;
+  each copy has a blank strip on its left for punching.
+- A single-copy PDF of every invoice is also saved in the Invoices folder.
+- One bill can have up to 8 items. Bag sizes LD, 25.1 kg and 30 kg fill in the weight by themselves;
+  choose Other to type the weight of one bag in kg.
+- Aata or Chapad: each item on an Aata bill starts with "Item" - choose Aata (आटा) or Chapad (चापड़).
+  That is the description printed on the bill. Sell either or both: use "+ Add another item" for more lines.
+- The customer's mobile number prints on the bill, next to the GST No.
+- The party's Location prints after their name and address on every bill and slip (not repeated if
+  the address already has it).
+- Saved parties: while making any bill, a "Saved parties" box on the right lists customers and sellers
+  you've dealt with. Type part of a name or mobile number and click one to fill in mobile, name,
+  location and GST. Typing a saved party's full name or mobile number also fills in the rest.
+- Discount (Rs): one amount per bill, under the goods. It comes off before GST (sales) or off the
+  purchase value (purchases), and prints on the bill only when used.
+- Book no.: in the Aata and Grains lists, click "+ Add" in the Book no. column (or the Book no. on a
+  bill's page) to write the account book number for that bill. Change or clear it any time.
+  The customer's mobile number shows under their name in the lists.
+- Made a bill by mistake? Open it > "Delete this bill". A backup copy is saved first. If it was the
+  latest bill, its number is used again for the next one.
+- Three tabs: Aata (wheat flour bills, numbered 01, 02...), Grains, Parties.
+- Grains tab > New bill: pick the grain (Wheat, Tewda, Chana, Soybean, Dhan), then Sale or Purchase.
+  Dhan is purchase only.
+  * Sale (numbered GS-01, GS-02...): same as an Aata bill. Wheat is entered as no. of bags (30 kg, or Other
+    to type the bag weight), like Aata; Tewda, Chana and Soybean as quantity in quintal. Wheat also needs its type (1544, Lokwan or Sharbati grades, Jhiri, Malwa, Shri Ram, Lota, or
+    Others). A wheat line with type "Others" is sold loose like the other grains: quantity in quintal and rate
+    only (no bags, size or brand; the name is optional). Bagged wheat lines can also have a brand, listed
+    A to Z (Others to type one). GST is optional.
+  * Purchase (numbered GP-01, GP-02...): enter vehicle, gross weight (quintal) and rate. Wheat types
+    include Mill Quality and Others (type the name). The app takes off
+    300 g per quintal, works out net weight x rate, then takes off dharam kata (Truck Rs 100; every other
+    vehicle Rs 60) and labour per quintal of net weight, rounded (.5 and above goes up): Hydraulic trolley Rs 7.5;
+    Truck, Tractor, Pickup and Others Rs 10.5. This applies to every slip.
+    Dhan: 1 kg per quintal is taken off (not 300 g) and labour is Rs 15 per quintal, whatever the vehicle.
+    What's left is payable to the seller, printed on a Purchase Slip.
+- Parties tab: one ledger per party (customers and sellers). Debit = bills to them and payments we make;
+  Credit = payments we receive and purchases from them. "we owe" means we still have to pay them.
+  Add old dues and record payments there; the PDF button opens that invoice or slip.
+
+D. IF SOMETHING LOOKS WRONG
+- "Open my bills" screen: click it and choose Allow. Normal after Chrome restarts.
+- "Can't find your bills file": make sure Google Drive is running (icon near the clock), then Try again.
+- Asked to choose the folder again (e.g. after clearing Chrome data): pick the SAME
+  Deo Ratan Billing folder - all bills come back.
+- Red "Not saved" in the top bar: click it and follow the steps. Nothing is lost.
+- Use the app in ONE window, on ONE laptop. Don't open the same folder from two computers.
+
+E. SHIPPING A NEW VERSION (for whoever updates the app)
+- Change the VERSION line at the top of sw.js, then upload the files to Cloudflare again.
+- Open apps show "A new version of the app is ready - Update now". Bills are not affected.

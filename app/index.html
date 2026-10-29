@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Deo Ratan Billing</title>
+<meta name="description" content="Billing for Deo Ratan Agro Foods. Works offline.">
+<meta name="theme-color" content="#7A2E2E">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" href="icons/favicon-32.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="fonts.css">
+<link rel="stylesheet" href="styles.css">
+<style>html,body{margin:0}[hidden]{display:none!important}</style>
+</head>
+<body>
+<div class="updatebar" id="updateBar" hidden><div class="wrap"><span>A new version of the app is ready.</span><button class="btn small" type="button" id="updateNow">Update now</button></div></div>
+<header class="bar">
+  <div class="wrap">
+    <div class="brand"><b>DEO RATAN AGRO FOODS</b><span>Aata &amp; grain billing</span></div>
+    <nav class="tabs" id="mainNav" aria-label="Sections" hidden>
+      <button class="tab" id="tab-bills" type="button">Aata</button>
+      <button class="tab" id="tab-grain" type="button">Grains</button>
+      <button class="tab" id="tab-cust" type="button">Parties</button>
+    </nav>
+    <div class="hdr-acts">
+      <button class="btn small report" type="button" id="reportBtn">Report a problem<span class="rpcount" id="reportCount" hidden></span></button>
+      <button class="btn small" type="button" id="installBtn" hidden>Install app</button>
+      <button class="savechip" type="button" id="saveStatus" hidden></button>
+    </div>
+  </div>
+</header>
+<main class="wrap" id="view"><p class="note" style="font-size:15px">Loading…</p></main>
+<div id="footerSlot"></div>
+<div class="scrim" id="scrim" hidden></div>
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+<div id="stage" aria-hidden="true"></div>
+<noscript><p style="padding:24px">Please turn on JavaScript to use this app.</p></noscript>
+<script src="vendor/html2canvas.min.js" defer></script>
+<script src="vendor/jspdf.umd.min.js" defer></script>
+<script src="vendor/xlsx.full.min.js" defer></script>
+<script src="app.js" defer></script>
+</body>
+</html>

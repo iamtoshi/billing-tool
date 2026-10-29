@@ -1,0 +1,16 @@
+import { chromium } from 'playwright';
+const OUT = process.argv[3];
+const b = await chromium.launch(); const ctx = await b.newContext({viewport:{width:1280,height:900}, acceptDownloads:true, serviceWorkers:'block'});
+await ctx.addInitScript(() => { window.showDirectoryPicker = async () => (await navigator.storage.getDirectory()).getDirectoryHandle('OFF', { create: true }); });
+const p = await ctx.newPage(); const errs=[]; p.on('pageerror',e=>errs.push(e.message)); p.on('console', m => { if (m.type()!=='log') errs.push(m.type()+': '+m.text()); });
+p.on('requestfailed', r => errs.push('FAILED '+r.url().replace(process.argv[2],'')+' '+r.failure().errorText));
+await p.goto(process.argv[2]); await p.getByRole('button',{name:'Choose folder'}).click(); await p.getByRole('heading',{name:'Aata bills',exact:true}).waitFor();
+await p.waitForTimeout(500);
+await ctx.setOffline(true);
+console.log('controlled offline:', await p.evaluate(() => !!navigator.serviceWorker.controller));
+await p.getByRole('button',{name:'New bill'}).click(); await p.fill('#f-party','Offline PDF Party'); await p.fill('#f-location','Bhopal');
+await p.fill('#f-i0-bags','10'); await p.selectOption('#f-i0-size','30kg'); await p.fill('#f-i0-rate','2600');
+await p.getByRole('button',{name:'Create bill'}).click(); await p.waitForSelector('.paperbox .inv');
+const [dl] = await Promise.all([p.waitForEvent('download'), p.getByRole('button',{name:'Download bill (PDF)'}).click()]);
+await dl.saveAs(OUT+'/cf-uncontrolled.pdf'); console.log('downloaded', dl.suggestedFilename());
+console.log(errs.join('\n') || 'no errors'); await b.close();
