@@ -1,7 +1,7 @@
 /* Deo Ratan Billing - offline support.
    Every app file is saved on the laptop the first time, so the app opens with no internet.
    To ship a new version: change VERSION below, then upload. Open apps show "A new version is ready". */
-const VERSION = '2026-10-29.2';
+const VERSION = '2026-10-29.3';
 const CACHE = 'deoratan-app-' + VERSION;
 const ASSETS = [
   "./",

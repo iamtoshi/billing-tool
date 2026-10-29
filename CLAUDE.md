@@ -35,6 +35,7 @@ npm run serve          # app + /api/report with Linear faked, on :8770
 npx wrangler dev       # the real Worker runtime locally (report endpoint says not_configured without the key)
 npm test               # full suite: ~200 checks, every amount against an independent calculation
 node tests/report.mjs http://localhost:8770/ test-output test-output/issues.json
+node tests/report-status.mjs http://localhost:8770/ test-output   # why a report waits: no internet vs a setup problem
 python3 tests/cfserve.py app 8766 &   # Cloudflare-style caching
 node tests/offline-pdf.mjs http://localhost:8766/ test-output
 node tests/offline-pdf-uncontrolled.mjs http://localhost:8766/ test-output

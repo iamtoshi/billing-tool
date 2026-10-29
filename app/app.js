@@ -145,7 +145,7 @@ async function deleteBill(id){ S.bills.delete(id); await persist(); }
 
 /* ---------- toast ---------- */
 let toastT;
-function toast(msg){ const t = $('#toast'); t.textContent = msg; t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => { t.hidden = true; }, 3200); }
+function toast(msg, ms){ const t = $('#toast'); t.textContent = msg; t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => { t.hidden = true; }, ms || 3200); }
 
 /* ---------- navigation ---------- */
 function go(view, id){
@@ -2001,11 +2001,25 @@ if ('serviceWorker' in navigator){
    Cloudflare function that files it in Linear). Without internet it waits on this laptop and goes later. */
 const REPORT_URL = 'api/report';
 let reportBusy = false;
+/* why reports are waiting: null (nothing waiting / not tried yet), {kind:'offline'} or {kind:'server', why:'…'} */
+let reportProblem = null;
 async function reportQueue(){ const q = await kvGet('reports'); return Array.isArray(q) ? q : []; }
 async function appVersion(){ try { const k = (await caches.keys()).find(n => n.startsWith('deoratan-app-')); return k ? k.slice(13) : 'dev'; } catch(e){ return 'dev'; } }
+/* plain words for what the server said */
+function serverWhy(status, out){
+  if (out && out.error === 'not_configured') return 'The report service on Cloudflare is missing a setting'+(out.missing && out.missing.length ? ' ('+out.missing.join(', ')+')' : '')+'.';
+  if (out && out.error === 'linear') return 'Linear did not accept the report'+(out.detail ? ': '+out.detail : '')+'.';
+  if (status === 404) return 'The report service was not found on the server.';
+  return 'The report service had an error (code '+status+').';
+}
+const problemLine = (p) => !p ? '' : p.kind === 'offline'
+  ? 'No internet right now. It sends by itself when the internet is back.'
+  : p.why+' This is a setup problem, not your internet. Please tell the person who looks after this app.';
 async function showReportCount(){
   const n = (await reportQueue()).length, el = $('#reportCount'); if (!el) return;
-  el.hidden = !n; el.textContent = n ? ' · '+n+' waiting' : '';
+  el.hidden = !n;
+  el.textContent = !n ? '' : ' · '+n+' waiting'+(reportProblem && reportProblem.kind === 'server' ? ': service problem' : reportProblem && reportProblem.kind === 'offline' ? ' for internet' : '');
+  el.classList.toggle('bad', !!(n && reportProblem && reportProblem.kind === 'server'));
 }
 function reportContext(){
   const ctx = {screen: S.view, browser: navigator.userAgent};
@@ -2017,26 +2031,41 @@ function reportContext(){
   }
   return ctx;
 }
+/* send everything waiting, now. Returns {sent:[issue ids], problem} */
 async function sendReports(){
-  if (reportBusy || !navigator.onLine) return;
+  const result = {sent:[], problem:null};
+  if (reportBusy) return result;
+  if (!(await reportQueue()).length){ reportProblem = null; showReportCount(); return result; }
+  if (!navigator.onLine){ reportProblem = result.problem = {kind:'offline'}; showReportCount(); return result; }
   reportBusy = true;
-  let sent = null;
   try {
     for (const r of await reportQueue()){
       let res;
-      try { res = await fetch(REPORT_URL, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(r)}); } catch(e){ break; }   // still offline
+      try { res = await fetch(REPORT_URL, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(r)}); }
+      catch(e){ result.problem = {kind:'offline'}; break; }   // no connection after all
       const out = await res.json().catch(() => ({}));
-      if (res.ok && out.ok){ sent = out; await kvSet('reports', (await reportQueue()).filter(x => x.id !== r.id)); }
-      else if (res.status >= 500 || res.status === 404) break;   // not set up yet, or Linear is down: keep it and try later
+      if (res.ok && out.ok){ result.sent.push(out.issue); await kvSet('reports', (await reportQueue()).filter(x => x.id !== r.id)); }
+      else if (res.status >= 500 || res.status === 404){ result.problem = {kind:'server', why:serverWhy(res.status, out)}; break; }   // keep it, try again later
       else await kvSet('reports', (await reportQueue()).filter(x => x.id !== r.id));   // a report the server can never accept
     }
-  } finally { reportBusy = false; showReportCount(); }
-  return sent;
+  } finally { reportBusy = false; }
+  reportProblem = (await reportQueue()).length ? result.problem : null;
+  showReportCount();
+  return result;
 }
-function openReport(){
+/* background tries: tell the person when a waiting report finally goes */
+async function retryReports(){
+  const res = await sendReports();
+  if (res.sent.length) toast((res.sent.length === 1 ? 'Your waiting report was sent' : res.sent.length+' waiting reports were sent')+'. Reference: '+res.sent.join(', '));
+}
+async function openReport(){
+  S.reportsWaiting = (await reportQueue()).length;
   const ctx = reportContext();
   let name = ''; try { name = localStorage.getItem('reportName') || ''; } catch(e){}
+  const waiting = S.reportsWaiting || 0;
   openDialog('<h2 id="dlgT">Report a problem or idea</h2>'+
+    (waiting ? '<div class="rpstatus'+(reportProblem && reportProblem.kind === 'server' ? ' bad' : '')+'" id="rpStatus"><b>'+(waiting === 1 ? '1 report is' : waiting+' reports are')+' waiting to be sent.</b> '+
+      esc(problemLine(reportProblem) || 'Not tried yet.')+' <button class="btn small" type="button" id="rpRetry">Try again now</button></div>' : '')+
     '<p class="note" style="font-size:14px">It goes straight to the person who looks after this app. Hindi or English is fine.</p>'+
     '<fieldset class="pick"><legend>What is it?</legend><div class="pickrow two">'+
       '<button type="button" class="pickbtn" data-rk="problem" aria-pressed="true"><b>Problem</b><span>Something is wrong or not working</span></button>'+
@@ -2054,6 +2083,13 @@ function openReport(){
   $('#rpText').focus();
   $('#rpText').addEventListener('input', () => { $('#rpErr').hidden = true; });
   $('#rpCancel').onclick = closeDialog;
+  if ($('#rpRetry')) $('#rpRetry').onclick = async () => {
+    const b = $('#rpRetry'); b.disabled = true; b.textContent = 'Trying…';
+    const res = await sendReports();
+    if (res.sent.length){ closeDialog(); toast('Sent. Reference: '+res.sent.join(', ')); return; }
+    $('#rpStatus').innerHTML = '<b>Still waiting.</b> '+esc(problemLine(res.problem))+' <button class="btn small" type="button" id="rpRetry2" disabled>Tried just now</button>';
+    $('#rpStatus').classList.toggle('bad', !!(res.problem && res.problem.kind === 'server'));
+  };
   $('#rpSend').onclick = async () => {
     const text = $('#rpText').value.trim(), err = $('#rpErr');
     if (text.length < 5){ err.textContent = 'Write a few words about it.'; err.hidden = false; $('#rpText').focus(); return; }
@@ -2063,15 +2099,17 @@ function openReport(){
     $('#rpSend').disabled = true;
     await kvSet('reports', (await reportQueue()).concat([rep]));
     closeDialog(); showReportCount();
-    const out = await sendReports();
-    if (out && out.issue) toast('Sent, thank you. Reference: '+out.issue);
-    else toast('Saved on this laptop. It will be sent by itself when the internet is back.');
+    const res = await sendReports();
+    if (res.sent.length && !res.problem) toast('Sent, thank you. Reference: '+res.sent.join(', '));
+    else if (res.problem && res.problem.kind === 'server') toast('Saved, but not sent: '+problemLine(res.problem), 9000);
+    else toast('No internet. Saved on this laptop, and it sends by itself when the internet is back.');
   };
 }
 $('#reportBtn').onclick = openReport;
-window.addEventListener('online', () => sendReports());
-setInterval(() => sendReports(), 10*60*1000);
-setTimeout(() => { showReportCount(); sendReports(); }, 4000);
+window.addEventListener('online', () => retryReports());
+window.addEventListener('offline', () => { reportQueue().then(q => { if (q.length){ reportProblem = {kind:'offline'}; showReportCount(); } }); });
+setInterval(() => retryReports(), 10*60*1000);
+setTimeout(() => retryReports(), 4000);
 
 /* ================= START ================= */
 $('#tab-bills').onclick = () => leaveForm(() => go('list'));

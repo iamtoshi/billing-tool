@@ -329,3 +329,6 @@ table.list.ledger{min-width:860px}
 .dialog textarea{width:100%;font:inherit;padding:10px 12px;border:1.5px solid var(--line-strong);border-radius:var(--r);background:var(--surface);color:var(--fg);resize:vertical}
 .rpbill{display:flex;gap:8px;align-items:flex-start;font-size:14px;padding:10px 12px;background:var(--sunk);border-radius:var(--r)}
 .rpbill input{margin-top:3px}
+.rpcount.bad{color:var(--bad-fg)}
+.rpstatus{padding:10px 12px;border-radius:var(--r);background:var(--warn-bg);color:var(--warn-fg);font-size:14px;display:flex;flex-wrap:wrap;gap:6px 8px;align-items:center}
+.rpstatus.bad{background:var(--bad-bg);color:var(--bad-fg)}

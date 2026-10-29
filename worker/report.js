@@ -6,9 +6,17 @@
 // Optional: LINEAR_PROJECT_ID to file them under one project.
 
 const MAX_TEXT = 4000;
+// the billing-tool team (BIL). Used when the dashboard setting is missing or not a valid team ID.
+const DEFAULT_TEAM_ID = '081e99c0-3483-4b35-a7bd-200b350e92ec';
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+// settings pasted into the dashboard can carry spaces, quotes or line breaks: tidy them
+const tidy = (v) => String(v || '').trim().replace(/^["']+|["']+$/g, '').trim();
 
 export async function handleReport(request, env) {
-  if (!env.LINEAR_API_KEY || !env.LINEAR_TEAM_ID) return json({ ok: false, error: 'not_configured' }, 503);
+  const key = tidy(env.LINEAR_API_KEY);
+  const team = UUID.test(tidy(env.LINEAR_TEAM_ID)) ? tidy(env.LINEAR_TEAM_ID) : DEFAULT_TEAM_ID;
+  if (!key) return json({ ok: false, error: 'not_configured', missing: ['LINEAR_API_KEY'] }, 503);
+  env = Object.assign({}, env, { LINEAR_API_KEY: key, LINEAR_TEAM_ID: team });
   let r;
   try { r = await request.json(); } catch (e) { return json({ ok: false, error: 'bad_json' }, 400); }
   const text = clean(r.text, MAX_TEXT);
