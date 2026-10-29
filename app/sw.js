@@ -1,7 +1,7 @@
 /* Deo Ratan Billing - offline support.
    Every app file is saved on the laptop the first time, so the app opens with no internet.
    To ship a new version: change VERSION below, then upload. Open apps show "A new version is ready". */
-const VERSION = '2026-10-29.2';
+const VERSION = '2026-10-29.5';
 const CACHE = 'deoratan-app-' + VERSION;
 const ASSETS = [
   "./",
@@ -58,6 +58,8 @@ self.addEventListener('message', (e) => { if (e.data === 'SKIP_WAITING') self.sk
 self.addEventListener('fetch', (e) => {
   const req = e.request;
   if (req.method !== 'GET' || new URL(req.url).origin !== location.origin) return;
+  // /api/* belongs to the server (report endpoint), never to the offline copy of the app
+  if (new URL(req.url).pathname.startsWith('/api/')) return;
   if (req.mode === 'navigate') {
     e.respondWith(caches.match('./', {cacheName: CACHE}).then((r) => r || fetch(req)));
     return;
