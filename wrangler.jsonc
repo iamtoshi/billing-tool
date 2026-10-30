@@ -13,5 +13,7 @@
   "workers_dev": true,
   // The Linear team that receives reports (billing-tool, BIL). The Linear key is a Secret set in the dashboard.
   "vars": { "LINEAR_TEAM_ID": "081e99c0-3483-4b35-a7bd-200b350e92ec" },
-  "keep_vars": true
+  "keep_vars": true,
+  // Branch previews (wrangler preview). They get the team id but NOT the Linear key, so a preview can never file real issues.
+  "previews": { "vars": { "LINEAR_TEAM_ID": "081e99c0-3483-4b35-a7bd-200b350e92ec" } }
 }
