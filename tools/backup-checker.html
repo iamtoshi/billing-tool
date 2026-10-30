@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<!-- This page cannot connect to the internet: everything below runs inside this window only. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'; form-action 'none'">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bills Backup Checker</title>
+<style>
+  :root{ --ink:#1c1c1c; --mute:#666; --line:#ddd; --bg:#fafafa; --card:#fff; --bad:#b3261e; --badbg:#fdecea; --warn:#8a5a00; --warnbg:#fff4dc; --ok:#1e6b35; --okbg:#e6f4ea; }
+  *{ box-sizing:border-box; }
+  body{ margin:0; font:15px/1.45 system-ui, "Segoe UI", Arial, sans-serif; color:var(--ink); background:var(--bg); }
+  main{ max-width:1200px; margin:0 auto; padding:20px 16px 60px; }
+  h1{ font-size:24px; margin:0 0 4px; } h2{ font-size:18px; margin:28px 0 8px; }
+  p{ margin:6px 0; } .mute{ color:var(--mute); }
+  .drop{ border:2px dashed #aaa; border-radius:10px; background:var(--card); padding:28px; text-align:center; margin:16px 0; }
+  .drop.over{ border-color:#333; background:#f0f0f0; }
+  .btn{ font:inherit; padding:9px 16px; border-radius:8px; border:1px solid #888; background:#fff; cursor:pointer; }
+  .btn.primary{ background:#1c1c1c; color:#fff; border-color:#1c1c1c; }
+  .safe{ background:var(--okbg); color:var(--ok); border-radius:8px; padding:8px 12px; display:inline-block; font-size:14px; }
+  .wrap{ overflow-x:auto; background:var(--card); border:1px solid var(--line); border-radius:8px; }
+  table{ border-collapse:collapse; width:100%; font-size:14px; }
+  th,td{ text-align:left; padding:7px 10px; border-bottom:1px solid var(--line); vertical-align:top; white-space:nowrap; }
+  td.wrapok{ white-space:normal; min-width:180px; }
+  th{ background:#f2f2f2; font-weight:600; position:sticky; top:0; }
+  tr.cur td{ background:var(--okbg); }
+  .r{ text-align:right; font-variant-numeric:tabular-nums; }
+  .tag{ display:inline-block; font-size:12px; padding:1px 7px; border-radius:10px; background:#eee; margin:1px 2px 1px 0; }
+  .tag.bad{ background:var(--badbg); color:var(--bad); } .tag.warn{ background:var(--warnbg); color:var(--warn); }
+  .banner{ border-radius:8px; padding:10px 14px; margin:8px 0; }
+  .banner.bad{ background:var(--badbg); color:var(--bad); } .banner.warn{ background:var(--warnbg); color:var(--warn); } .banner.ok{ background:var(--okbg); color:var(--ok); }
+  .bar{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin:8px 0; }
+  select,input[type=search]{ font:inherit; padding:7px 10px; border:1px solid #aaa; border-radius:8px; max-width:100%; }
+  @media print{ .drop,.bar,.noprint{ display:none !important; } body{ background:#fff; } th{ position:static; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>Bills Backup Checker</h1>
+  <p class="mute">For Deo Ratan Billing backup files. It shows which bills are in each file and which ones are missing from the current one.</p>
+  <p class="safe">Works offline. Your files are only read inside this window. Nothing is uploaded or saved, and closing the window clears everything.</p>
+
+  <div class="drop" id="drop">
+    <p><b>Drag the files here</b>: <code>bills-data.json</code> and the files from the <code>Backups</code> folder.</p>
+    <p class="mute">You can add more files at any time.</p>
+    <p><label class="btn primary" for="pick">Choose files…</label>
+    <input id="pick" type="file" accept=".json,application/json" multiple hidden></p>
+  </div>
+
+  <div id="out"></div>
+</main>
+<script>
+(function(){
+'use strict';
+var APP_ID = 'deoratan-billing';
+var KIND = {aata:'Aata', gsale:'Grain sale', gpurchase:'Grain purchase'};
+var GRAIN = {wheat:'Wheat', tewda:'Tewda', chana:'Chana', soybean:'Soybean', dhan:'Dhan'};
+var files = [];          // {name, modified, data|null, error}
+var currentIdx = -1;
+var query = '';
+
+function $(s){ return document.querySelector(s); }
+function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+function kindOf(b){ return (b && b.kind) || 'aata'; }
+function isDraft(b){ return b.status === 'draft'; }
+function when(iso){ if (!iso) return '—'; var d = new Date(iso); if (isNaN(d)) return esc(iso);
+  return d.toLocaleString('en-IN', {day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit'}); }
+function dmy(s){ if (!s) return '—'; var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s); return m ? m[3]+'/'+m[2]+'/'+m[1] : esc(s); }
+function billNo(b){ return isDraft(b) ? 'Draft' : (b.invNo || '—'); }
+function kindLabel(b){ var k = kindOf(b); return KIND[k] || k; }
+function grainLabel(b){ return kindOf(b) === 'aata' ? '' : (GRAIN[b.grain] || b.grain || ''); }
+function changedAt(b){ return b.updatedAt || b.createdAt || ''; }
+
+function addFiles(list){
+  var arr = Array.prototype.slice.call(list || []);
+  var left = arr.length; if (!left) return;
+  arr.forEach(function(f){
+    var r = new FileReader();
+    r.onload = function(){
+      var rec = {name:f.name, modified:f.lastModified, data:null, error:''};
+      try {
+        var d = JSON.parse(r.result);
+        if (d && d.app === APP_ID && Array.isArray(d.bills)) rec.data = d;
+        else rec.error = 'Not a bills file from this app';
+      } catch(e){ rec.error = 'Could not be read (damaged or not JSON)'; }
+      // same name and same save time added twice: keep one
+      if (!files.some(function(x){ return x.name === rec.name && x.data && rec.data && x.data.savedAt === rec.data.savedAt; })) files.push(rec);
+      if (--left === 0) afterLoad();
+    };
+    r.onerror = function(){ files.push({name:f.name, modified:f.lastModified, data:null, error:'Could not be opened'}); if (--left === 0) afterLoad(); };
+    r.readAsText(f);
+  });
+}
+function afterLoad(){
+  files.sort(function(a,b){ return (b.data ? b.data.savedAt || '' : '').localeCompare(a.data ? a.data.savedAt || '' : ''); });
+  // default "current" = bills-data.json, else the newest file
+  var i = files.findIndex(function(f){ return f.data && /^bills-data/i.test(f.name); });
+  if (i < 0) i = files.findIndex(function(f){ return f.data; });
+  if (currentIdx < 0 || !files[currentIdx] || !files[currentIdx].data) currentIdx = i;
+  render();
+}
+
+function summary(d){
+  var s = {aata:0, gsale:0, gpurchase:0, drafts:0, payments:0, newest:''};
+  d.bills.forEach(function(b){
+    if (!b) return;
+    if (isDraft(b)) s.drafts++; else s[kindOf(b)] = (s[kindOf(b)]||0) + 1;
+    s.payments += (b.payments || []).length;
+    var t = changedAt(b); if (t > s.newest) s.newest = t;
+  });
+  s.parties = d.customers ? Object.keys(d.customers).length : 0;
+  return s;
+}
+
+function render(){
+  var good = files.filter(function(f){ return f.data; });
+  var h = '';
+  if (!files.length){ $('#out').innerHTML = ''; return; }
+
+  /* 1. the files */
+  h += '<h2>1. Files added ('+files.length+')</h2>';
+  h += '<p class="mute">Newest save first. The green row is the file the others are compared with. That is usually <b>bills-data.json</b>, the file the app is using now.</p>';
+  h += '<div class="bar noprint"><label>Compare with: <select id="cur">'+files.map(function(f,i){
+        return f.data ? '<option value="'+i+'"'+(i===currentIdx?' selected':'')+'>'+esc(f.name)+' · saved '+esc(when(f.data.savedAt))+'</option>' : ''; }).join('')+'</select></label>'+
+       '<button class="btn" type="button" id="clear">Remove all files</button> <button class="btn" type="button" onclick="window.print()">Print</button></div>';
+  h += '<div class="wrap"><table><thead><tr><th>File</th><th>Saved by the app at</th><th class="r">Aata</th><th class="r">Grain sale</th><th class="r">Grain purchase</th><th class="r">Drafts</th><th class="r">Payments</th><th class="r">Parties</th><th>Last bill change</th></tr></thead><tbody>';
+  files.forEach(function(f,i){
+    if (!f.data){ h += '<tr><td>'+esc(f.name)+'</td><td colspan="8"><span class="tag bad">'+esc(f.error)+'</span></td></tr>'; return; }
+    var s = summary(f.data);
+    h += '<tr'+(i===currentIdx?' class="cur"':'')+'><td>'+esc(f.name)+(i===currentIdx?' <span class="tag">compared with</span>':'')+'</td><td>'+esc(when(f.data.savedAt))+'</td>'+
+      '<td class="r">'+s.aata+'</td><td class="r">'+s.gsale+'</td><td class="r">'+s.gpurchase+'</td><td class="r">'+s.drafts+'</td><td class="r">'+s.payments+'</td><td class="r">'+s.parties+'</td><td>'+esc(when(s.newest))+'</td></tr>';
+  });
+  h += '</tbody></table></div>';
+
+  if (!good.length || currentIdx < 0){ $('#out').innerHTML = h; wire(); return; }
+
+  /* gather every bill across all files, keep the most recently changed copy of each */
+  var cur = files[currentIdx].data;
+  var inCur = {}; cur.bills.forEach(function(b){ if (b && b.id) inCur[b.id] = b; });
+  var all = {};   // id -> {bill, files:[names], newer:bool}
+  good.forEach(function(f){
+    f.data.bills.forEach(function(b){
+      if (!b || !b.id) return;
+      var e = all[b.id];
+      if (!e){ all[b.id] = {bill:b, files:[f.name], copies:[{name:f.name, b:b}]}; return; }
+      if (e.files.indexOf(f.name) < 0) e.files.push(f.name);
+      e.copies.push({name:f.name, b:b});
+      if (changedAt(b) > changedAt(e.bill)) e.bill = b;
+    });
+  });
+  var missing = [], newer = [];
+  Object.keys(all).forEach(function(id){
+    var e = all[id];
+    if (!inCur[id]) missing.push(e);
+    else if (changedAt(e.bill) > changedAt(inCur[id]) || (e.bill.payments||[]).length > (inCur[id].payments||[]).length) newer.push({e:e, cur:inCur[id]});
+  });
+  var byTime = function(a,b){ return (changedAt(a.bill||a.e.bill)).localeCompare(changedAt(b.bill||b.e.bill)); };
+  missing.sort(byTime); newer.sort(byTime);
+
+  /* number clashes: same kind + same number, different bills */
+  var nums = {}; Object.keys(all).forEach(function(id){ var b = all[id].bill; if (isDraft(b) || !b.invNo) return; var k = kindOf(b)+'|'+b.invNo; (nums[k] = nums[k] || []).push(all[id]); });
+  var clashes = Object.keys(nums).filter(function(k){ return nums[k].length > 1; }).sort();
+
+  var match = function(b){ if (!query) return true; var q = query.toLowerCase();
+    return [b.invNo, b.party, b.mobile, b.bookNo, b.date, kindLabel(b), grainLabel(b)].join(' ').toLowerCase().indexOf(q) >= 0; };
+
+  h += '<div class="bar noprint" style="margin-top:22px"><input id="q" type="search" placeholder="Search by party, mobile, bill no. or date" value="'+esc(query)+'" style="width:340px"></div>';
+
+  /* 2. missing */
+  h += '<h2>2. Bills that are NOT in '+esc(files[currentIdx].name)+' ('+missing.length+')</h2>';
+  h += missing.length
+    ? '<p class="banner bad">These bills are in at least one of the other files but missing from the file you compare with. They can be brought back.</p>'+billTable(missing.filter(function(e){ return match(e.bill); }), true)
+    : '<p class="banner ok">Every bill in the other files is also in this file.</p>';
+
+  /* 3. newer copies */
+  h += '<h2>3. Bills with a newer copy in another file ('+newer.length+')</h2>';
+  h += newer.length
+    ? '<p class="banner warn">The bill is in the current file, but another file has a later change, for example a payment added. Check these one by one.</p>'+
+      '<div class="wrap"><table><thead><tr><th>Type</th><th>Bill no.</th><th>Date</th><th>Party</th><th>Changed (current file)</th><th>Changed (other file)</th><th class="r">Payments now → other</th><th>Newer copy is in</th></tr></thead><tbody>'+
+      newer.filter(function(x){ return match(x.e.bill); }).map(function(x){ var b = x.e.bill;
+        return '<tr><td>'+esc(kindLabel(b))+(grainLabel(b)?' · '+esc(grainLabel(b)):'')+'</td><td>'+esc(billNo(b))+'</td><td>'+dmy(b.date)+'</td><td class="wrapok">'+esc(b.party||'—')+'</td>'+
+          '<td>'+esc(when(changedAt(x.cur)))+'</td><td>'+esc(when(changedAt(b)))+'</td><td class="r">'+(x.cur.payments||[]).length+' → '+(b.payments||[]).length+'</td><td class="wrapok">'+fileTags(x.e.copies.filter(function(c){ return changedAt(c.b) > changedAt(x.cur) || (c.b.payments||[]).length > (x.cur.payments||[]).length; }).map(function(c){ return c.name; }))+'</td></tr>'; }).join('')+
+      '</tbody></table></div>'
+    : '<p class="banner ok">No bill has a newer copy elsewhere.</p>';
+
+  /* 4. clashes */
+  h += '<h2>4. Same bill number used twice ('+clashes.length+')</h2>';
+  h += clashes.length
+    ? '<p class="banner warn">Two different bills have the same number. This happens when two computers made bills at the same time. Don\'t merge these until you decide which bill keeps the number.</p>'+
+      '<div class="wrap"><table><thead><tr><th>Type</th><th>Bill no.</th><th>Date</th><th>Party</th><th>Made at</th><th>In the current file?</th><th>Found in</th></tr></thead><tbody>'+
+      clashes.map(function(k){ return nums[k].map(function(e,j){ var b = e.bill;
+        return '<tr'+(j===0?' style="border-top:2px solid #999"':'')+'><td>'+esc(kindLabel(b))+'</td><td><b>'+esc(b.invNo)+'</b></td><td>'+dmy(b.date)+'</td><td class="wrapok">'+esc(b.party||'—')+'</td><td>'+esc(when(b.createdAt))+'</td>'+
+          '<td>'+(inCur[b.id] ? 'Yes' : '<span class="tag bad">No</span>')+'</td><td class="wrapok">'+fileTags(e.files)+'</td></tr>'; }).join(''); }).join('')+
+      '</tbody></table></div>'
+    : '<p class="banner ok">No bill number is used twice.</p>';
+
+  /* 5. everything */
+  var everything = Object.keys(all).map(function(id){ return all[id]; }).sort(byTime);
+  h += '<h2>5. All bills in all files ('+everything.length+')</h2><p class="mute">Oldest change first.</p>'+billTable(everything.filter(function(e){ return match(e.bill); }), false, inCur);
+
+  $('#out').innerHTML = h; wire();
+}
+function fileTags(names){ return names.map(function(n){ return '<span class="tag">'+esc(n)+'</span>'; }).join(''); }
+function billTable(rows, isMissing, inCur){
+  if (!rows.length) return '<p class="mute">Nothing matches the search.</p>';
+  return '<div class="wrap"><table><thead><tr><th>Type</th><th>Bill no.</th><th>Book no.</th><th>Bill date</th><th>Party</th><th>Mobile</th><th>Made at</th><th>Last changed</th><th class="r">Payments</th>'+(isMissing?'':'<th>In current?</th>')+'<th>Found in</th></tr></thead><tbody>'+
+    rows.map(function(e){ var b = e.bill;
+      return '<tr><td>'+esc(kindLabel(b))+(grainLabel(b)?' · '+esc(grainLabel(b)):'')+'</td><td>'+esc(billNo(b))+'</td><td>'+esc(b.bookNo||'')+'</td><td>'+dmy(b.date)+'</td><td class="wrapok">'+esc(b.party||'—')+'</td><td>'+esc(b.mobile||'')+'</td>'+
+        '<td>'+esc(when(b.createdAt))+'</td><td>'+esc(when(changedAt(b)))+'</td><td class="r">'+(b.payments||[]).length+'</td>'+
+        (isMissing?'':'<td>'+(inCur[b.id]?'Yes':'<span class="tag bad">No</span>')+'</td>')+'<td class="wrapok">'+fileTags(e.files)+'</td></tr>'; }).join('')+
+    '</tbody></table></div>';
+}
+function wire(){
+  var c = $('#cur'); if (c) c.onchange = function(){ currentIdx = +c.value; render(); };
+  var x = $('#clear'); if (x) x.onclick = function(){ files = []; currentIdx = -1; query = ''; render(); };
+  var q = $('#q'); if (q){ q.oninput = function(){ query = q.value; var pos = q.selectionStart; render(); var n = $('#q'); n.focus(); try { n.setSelectionRange(pos, pos); } catch(e){} }; }
+}
+
+$('#pick').onchange = function(e){ addFiles(e.target.files); e.target.value = ''; };
+var drop = $('#drop');
+['dragenter','dragover'].forEach(function(t){ document.addEventListener(t, function(e){ e.preventDefault(); drop.classList.add('over'); }); });
+['dragleave','drop'].forEach(function(t){ document.addEventListener(t, function(e){ e.preventDefault(); if (t === 'drop' || e.target === drop) drop.classList.remove('over'); }); });
+document.addEventListener('drop', function(e){ addFiles(e.dataTransfer && e.dataTransfer.files); });
+})();
+</script>
+</body>
+</html>
