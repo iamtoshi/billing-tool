@@ -422,6 +422,26 @@ await p.getByRole('button', { name: '← Parties' }).click();
 await p.locator('tr', { hasText: 'Shri Balaji' }).getByRole('button', { name: 'Open ledger' }).click();
 const balajiBal = r2(oA1.final - 50000 + 0 + oW1.final - 100000); // bill 01, deleted bill 04 gone, GS-01
 near('Balaji balance (Aata + wheat sale − advances)', money(await txt('.ledsum .card.big b')), balajiBal);
+// old dues straight from the Parties list: one click per party, no name / mobile / address asked
+await p.getByRole('button', { name: '← Parties' }).click();
+const balajiRow = () => p.locator('tr', { hasText: 'Shri Balaji' });
+await p.screenshot({ path: OUT + '/parties-list.png' });
+eq('row button says Add old dues', await balajiRow().locator('[data-old]').innerText(), 'Add old dues');
+await balajiRow().locator('[data-old]').click();
+check('dialog is for that party', (await txt('#dlgT')).includes('Shri Balaji'), await txt('#dlgT'));
+
+eq('no name / mobile / location asked', await p.locator('#oName, #oMob, #oLoc').count(), 0);
+await p.fill('#oAmt', '1000'); await p.fill('#oDate', '02/11/2026'); await p.getByRole('button', { name: 'Save', exact: true }).click(); await p.waitForTimeout(300);
+check('stays on the Parties list', (await p.locator('h1').innerText()).includes('Parties'), await p.locator('h1').innerText());
+eq('once old dues exist, the row has no old-dues button (editing is only inside the party)', await balajiRow().locator('[data-old]').count(), 0);
+check('row shows a check mark: Old dues added', (await balajiRow().locator('.oldtag').innerText()).includes('✓') && (await balajiRow().locator('.oldtag').innerText()).includes('Old dues added'));
+eq('no check mark on a party without old dues', await p.locator('tr', { hasText: 'Buyer soybean' }).locator('.oldtag').count(), 0);
+check('Open ledger is still there', await balajiRow().getByRole('button', { name: 'Open ledger' }).count() === 1);
+await balajiRow().getByRole('button', { name: 'Open ledger' }).click();
+near('balance up by the old dues', money(await txt('.ledsum .card.big b')), r2(balajiBal + 1000));
+check('ledger shows Opening balance 1,000', (await p.locator('table.ledger tbody tr').allInnerTexts()).some(t => t.includes('Opening balance') && t.includes('1,000')));
+await p.locator('#ledOpen').click(); await p.fill('#oAmt', '0'); await p.getByRole('button', { name: 'Save', exact: true }).click(); await p.waitForTimeout(300);
+near('editing inside the party: removing the old dues restores the balance', money(await txt('.ledsum .card.big b')), balajiBal);
 const [pop] = await Promise.all([p.waitForEvent('popup'), p.locator('[data-pdf]').first().click()]);
 check('ledger opens invoice PDF', !!pop); await pop.close();
 
@@ -548,6 +568,96 @@ const keepOld = await p.evaluate(async () => {
 eq('editing an old final bill keeps its old rounding', keepOld.a, false);
 eq('an unfinished draft from before switches to exact weight', keepOld.d, true);
 eq('a new bill uses exact weight', keepOld.n, true);
+
+/* ================================================================ */
+sec('Calendars everywhere: every date box opens, moves between months, picks, Today, Escape, click-outside, not clipped');
+const calTest = async (label, id) => {
+  const sel = '#cal-' + id, btn = `[data-cal="${id}"]`, hid = () => p.evaluate((s) => document.querySelector(s).hidden, sel);
+  await p.locator(btn).scrollIntoViewIfNeeded();
+  await p.locator(btn).click(); await p.waitForTimeout(100);
+  check(label + ': calendar opens', !(await hid()));
+  const m0 = await p.locator(sel + ' .calhead b').innerText();
+  await p.locator(sel + ' [data-nav="1"]').click(); await p.waitForTimeout(80);
+  const m1 = await p.locator(sel + ' .calhead b').innerText();
+  check(label + ': next month works and stays open', !(await hid()) && m1 !== m0, m0 + ' -> ' + m1);
+  await p.locator(sel + ' [data-nav="-1"]').click(); await p.locator(sel + ' [data-nav="-1"]').click(); await p.waitForTimeout(80);
+  const m2 = await p.locator(sel + ' .calhead b').innerText();
+  check(label + ': earlier months work and stay open', !(await hid()) && m2 !== m0, m2);
+  // the last day of the month is visible and really on top (not clipped by the dialog / page)
+  await p.locator(sel + ' .calday').last().scrollIntoViewIfNeeded().catch(() => {});   // a person can scroll the page; a clipped calendar cannot be scrolled
+  const vis = await p.evaluate((s) => { const days = [...document.querySelectorAll(s + ' .calday')], d = days[days.length - 1], r = d.getBoundingClientRect(); const t = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return { onTop: t === d || d.contains(t), inView: r.bottom <= innerHeight + 2 && r.top >= -2 && r.right <= innerWidth + 2 && r.left >= -2, rect: [Math.round(r.top), Math.round(r.bottom), Math.round(r.left), Math.round(r.right)], vp: [innerWidth, innerHeight], sy: scrollY, docH: document.documentElement.scrollHeight }; }, sel);
+  check(label + ': whole calendar visible and clickable', vis.onTop && vis.inView, JSON.stringify(vis));
+  await p.locator(sel + ' .calday').nth(9).click(); await p.waitForTimeout(80);
+  const v = await p.inputValue('#' + id);
+  check(label + ': picking a day fills the box and closes', /^10\/\d\d\/\d{4}$/.test(v) && (await hid()), v);
+  await p.locator(btn).click(); await p.locator(sel + ' [data-today]').click(); await p.waitForTimeout(80);
+  const t = await p.inputValue('#' + id), td = new Date(), tdS = String(td.getDate()).padStart(2, '0') + '/' + String(td.getMonth() + 1).padStart(2, '0') + '/' + td.getFullYear();
+  check(label + ': Today button', t === tdS && (await hid()), t + ' vs ' + tdS);
+  await p.locator(btn).click(); await p.keyboard.press('Escape'); await p.waitForTimeout(80);
+  check(label + ': Escape closes it (page stays)', await hid());
+  await p.locator(btn).click(); await p.locator((await p.locator('#dlgT').count()) ? '#dlgT' : 'h1').first().click(); await p.waitForTimeout(80);
+  check(label + ': click outside closes it', await hid());
+  await p.fill('#' + id, '05/03/2026'); await p.locator(btn).click();
+  check(label + ': opens on the typed date (March 2026)', (await p.locator(sel + ' .calhead b').innerText()).includes('March 2026'));
+  await p.keyboard.press('Escape');
+};
+const sizes = [[1280, 1000, 'laptop'], [1366, 600, 'small laptop'], [390, 800, 'phone']];
+for (const [w, h, nm] of sizes) {
+  await p.setViewportSize({ width: w, height: h });
+  // Aata bill form
+  await go('Aata'); await p.getByRole('button', { name: 'New bill' }).click(); await p.waitForSelector('#f-date');
+  await calTest(nm + ' · bill date', 'f-date');
+  await p.locator('summary', { hasText: '5. Transport details' }).count();
+  if (await p.locator('[data-cal="f-dueDate"]').count()) await calTest(nm + ' · due date', 'f-dueDate');
+  // Grain purchase form
+  await go('Grains'); await newGrain('wheat', 'gpurchase'); await p.waitForSelector('#f-date');
+  await calTest(nm + ' · grain bill date', 'f-date');
+  // Parties: old dues from the list row, from the ledger, and a ledger payment
+  await go('Parties');
+  await p.locator('tr', { hasText: 'Buyer soybean' }).locator('[data-old]').click(); await calTest(nm + ' · old dues (list row)', 'oDate'); await p.getByRole('button', { name: 'Cancel' }).click();
+  await p.locator('tr', { hasText: 'Buyer soybean' }).getByRole('button', { name: 'Open ledger' }).click();
+  await p.getByRole('button', { name: 'Record payment' }).click(); await calTest(nm + ' · ledger payment', 'lDate'); await p.getByRole('button', { name: 'Cancel' }).click();
+  await p.locator('#ledOpen').click(); await calTest(nm + ' · old dues (ledger Change)', 'oDate'); await p.getByRole('button', { name: 'Cancel' }).click();
+  // payment dialog on a bill from the Aata list
+  await go('Aata');
+  const payBtn = p.locator('[data-act="pay"]').first();
+  if (await payBtn.count()) { await payBtn.click(); await calTest(nm + ' · bill payment', 'pDate'); await p.getByRole('button', { name: 'Cancel' }).click(); }
+  else check(nm + ' · bill payment dialog reachable', false, 'no pay button found');
+}
+await p.setViewportSize({ width: 1280, height: 1000 });
+
+
+/* ================================================================ */
+sec('Old dues from the top button: auto-fill by mobile, blocked when already added, new party allowed');
+await go('Parties');
+eq('top "+ Add old dues" button is back', await p.locator('#addOld').count(), 1);
+await p.locator('#addOld').click();
+await p.fill('#oMob', '9123456780'); await p.waitForTimeout(150);
+await p.screenshot({ path: OUT + '/olddues-blocked.png' });
+eq('existing mobile fills the party name', await p.inputValue('#oName'), 'Gupta Kirana Store');
+check('already-added party: error says go to the ledger', (await txt('#oErr')).includes('already been added') && (await txt('#oErr')).includes('ledger'), await txt('#oErr'));
+check('already-added party: Save is disabled', await p.locator('#oSave').isDisabled());
+await p.fill('#oMob', '9876543210'); await p.waitForTimeout(150);
+check('party without old dues: name filled in and locked', (await p.inputValue('#oName')).includes('Shri Balaji') && await p.locator('#oName').evaluate(e => e.readOnly));
+check('party without old dues: no error, Save enabled', await p.locator('#oErr').isHidden() && !(await p.locator('#oSave').isDisabled()));
+await p.fill('#oAmt', '700'); await p.fill('#oDate', '01/11/2026'); await p.getByRole('button', { name: 'Save', exact: true }).click(); await p.waitForTimeout(300);
+check('saved against the existing party (ledger opens)', (await p.locator('h1').innerText()).includes('Shri Balaji'), await p.locator('h1').innerText());
+check('ledger shows Opening balance 700', (await p.locator('table.ledger tbody tr').allInnerTexts()).some(t => t.includes('Opening balance') && t.includes('700')));
+await go('Parties'); await p.locator('#addOld').click();
+await p.fill('#oMob', '9876543210'); await p.waitForTimeout(150);
+check('Balaji now blocked too (old dues just added)', await p.locator('#oSave').isDisabled() && (await txt('#oErr')).includes('already been added'));
+await p.fill('#oMob', ''); await p.fill('#oName', 'gupta kirana store'); await p.waitForTimeout(150);
+check('typing an existing name (no mobile) is blocked as well', await p.locator('#oSave').isDisabled() && (await txt('#oErr')).includes('already been added'));
+await p.fill('#oName', ''); await p.fill('#oMob', '9000000001'); await p.fill('#oName', 'Brand New Old Dues Party'); await p.fill('#oLoc', 'Indore'); await p.waitForTimeout(150);
+check('a party not in the app yet: allowed', await p.locator('#oErr').isHidden() && !(await p.locator('#oSave').isDisabled()));
+await p.fill('#oAmt', '1234'); await p.getByRole('button', { name: 'Save', exact: true }).click(); await p.waitForTimeout(300);
+near('new party ledger balance = its old dues', money(await txt('.ledsum .card.big b')), 1234);
+await go('Parties');
+check('new party is in the list with the check mark', (await p.locator('tr', { hasText: 'Brand New Old Dues Party' }).locator('.oldtag').count()) === 1);
+// put Balaji back as it was
+await p.locator('tr', { hasText: 'Shri Balaji' }).getByRole('button', { name: 'Open ledger' }).click();
+await p.locator('#ledOpen').click(); await p.fill('#oAmt', '0'); await p.getByRole('button', { name: 'Save', exact: true }).click(); await p.waitForTimeout(300);
+
 console.log('\nJS ERRORS:', errors.length ? errors : 'none');
 console.log(`\nRESULT: ${pass} passed, ${fail} failed`);
 if (fails.length) console.log('FAILED:\n - ' + fails.join('\n - '));

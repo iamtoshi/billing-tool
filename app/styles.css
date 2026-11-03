@@ -332,3 +332,7 @@ table.list.ledger{min-width:860px}
 .rpcount.bad{color:var(--bad-fg)}
 .rpstatus{padding:10px 12px;border-radius:var(--r);background:var(--warn-bg);color:var(--warn-fg);font-size:14px;display:flex;flex-wrap:wrap;gap:6px 8px;align-items:center}
 .rpstatus.bad{background:var(--bad-bg);color:var(--bad-fg)}
+
+/* Parties list: two buttons per row */
+.rowacts{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.oldtag{display:inline-flex;align-items:center;min-height:36px;padding:0 12px;border-radius:99px;font-size:14px;font-weight:600;background:var(--ok-bg);color:var(--ok-fg);white-space:nowrap}
