@@ -33,6 +33,7 @@ C. EVERY DAY
 - Download bill (PDF) puts 3 copies on one A4 page in the Downloads folder: cut on the dashed lines;
   each copy has a blank strip on its left for punching.
 - A single-copy PDF of every invoice is also saved in the Invoices folder.
+- Aata weight is exact, with no rounding: for example 5 bags of 25.1 kg = 125.5 kg = 1.255 quintal, and the price is worked out on 1.255 quintal. (Bills made before 3 Nov 2026 keep the way they were worked out; their totals do not change.) Grain weights are not affected.
 - One bill can have up to 8 items. Bag sizes LD, 25.1 kg and 30 kg fill in the weight by themselves;
   choose Other to type the weight of one bag in kg.
 - Aata or Chapad: each item on an Aata bill starts with "Item" - choose Aata (आटा) or Chapad (चापड़).

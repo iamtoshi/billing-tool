@@ -5,7 +5,8 @@ const esc = (v) => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&
 const num = (v) => { const n = parseFloat(String(v ?? '').replace(/,/g,'')); return isFinite(n) ? n : 0; };
 const r2 = (n) => Math.round(n*100)/100;
 const inr = (n) => (Math.round(n*100)/100).toLocaleString('en-IN', {maximumFractionDigits:2});
-const qtlFmt = (n) => (Math.round(n*100)/100).toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2});
+/* quintals: two decimals as always; a third decimal only when the weight really has one (Aata bills keep the exact weight, e.g. 5 bags x 25.1 kg = 1.255 qtl) */
+const qtlFmt = (n) => (Math.round(n*1000)/1000).toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:3});
 const pad = (n) => String(n).padStart(2,'0');
 const todayISO = () => { const d = new Date(); return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate()); };
 const dmy = (iso) => { if(!iso) return ''; const [y,m,d] = iso.split('-'); return d+'/'+m+'/'+y; };
@@ -82,14 +83,17 @@ function itemsOf(b){
   if (kindOf(b) !== 'aata') return [];
   return [{id:'i0', desc:b.desc ?? 'आटा', hsn:b.hsn ?? '1001', bags:b.bags ?? '', size:b.size ?? '', bagKg:b.bagKg ?? '', rate:b.rate ?? ''}];
 }
-function itemCalc(it, kind){
+/* Aata bills made from 3 Nov 2026 (wt3) use the exact weight, no rounding to 0.01 qtl. Older bills keep the rounding they were made with, so their totals never change. */
+const r3 = (n) => Math.round(n*1000)/1000;
+const exactWt = (b) => b.wt3 === true || b.status === 'draft';   // new bills and unfinished drafts use the exact weight
+function itemCalc(it, kind, exact){
   if (kind === 'gsale'){
     const rate = num(it.rate), bags = looseWheat(it) ? 0 : num(it.bags);
     if (bags > 0){ const kg = it.size === 'other' ? num(it.bagKg) : (num(it.bagKg) || WHEAT_BAG_KG), q = r2(bags*kg/100); return {bags, kg, rate, qtl:q, amount:r2(q*rate)}; }
     const q = r2(num(it.qty)); return {bags:0, kg:0, rate, qtl:q, amount:r2(q*rate)};
   }
   const bags = num(it.bags), kg = num(it.bagKg), rate = num(it.rate);
-  const qtl = r2(bags*kg/100);
+  const qtl = exact ? r3(bags*kg/100) : r2(bags*kg/100);
   return {bags, kg, rate, qtl, amount: r2(qtl*rate)};
 }
 /* weighment maths for a purchase */
@@ -120,9 +124,9 @@ function calc(b){
     const balance = r2(p.final - received);
     return Object.assign(p, {items:[], bags:0, qtl:p.net, sgst:0, cgst:0, igst:0, freight:0, received, advance, balance, status:payStatus(b, p.final, received, balance)});
   }
-  const items = itemsOf(b).map(it => Object.assign({}, it, itemCalc(it, kind)));
+  const items = itemsOf(b).map(it => Object.assign({}, it, itemCalc(it, kind, exactWt(b))));
   const bags = items.reduce((t,i) => t + i.bags, 0);
-  const qtl = r2(items.reduce((t,i) => t + i.qtl, 0));
+  const qtl = exactWt(b) ? r3(items.reduce((t,i) => t + i.qtl, 0)) : r2(items.reduce((t,i) => t + i.qtl, 0));
   const amount = r2(items.reduce((t,i) => t + i.amount, 0));
   const discount = r2(num(b.discount)), taxable = r2(amount - discount);   // GST is on the amount after discount
   const sgst = num(b.sgst), cgst = num(b.cgst), igst = num(b.igst), freight = num(b.freight);
@@ -428,12 +432,13 @@ function sectionsFor(f){
   return SECTIONS;
 }
 
-function blankBill(){ return {id:uid(), kind:'aata', status:'draft', invNo:'', date:todayISO(), party:'', gst:'', location:'', mobile:'', items:[blankItem()], gstMode:'', taxEdited:{}, discount:'', sgst:'', cgst:'', igst:'', freight:'', dueDate:'', advance:'', advMode:'Cash', stationFrom:'Sukhi Sevaniya', stationTo:'', truckNo:'', biltiNo:'', transporter:'', gatePass:'', saudaNo:'', saudaAgent:'', driverName:'', driverNo:'', frieghtNote:'', payments:[]}; }
+function blankBill(){ return {id:uid(), kind:'aata', status:'draft', wt3:true, invNo:'', date:todayISO(), party:'', gst:'', location:'', mobile:'', items:[blankItem()], gstMode:'', taxEdited:{}, discount:'', sgst:'', cgst:'', igst:'', freight:'', dueDate:'', advance:'', advMode:'Cash', stationFrom:'Sukhi Sevaniya', stationTo:'', truckNo:'', biltiNo:'', transporter:'', gatePass:'', saudaNo:'', saudaAgent:'', driverName:'', driverNo:'', frieghtNote:'', payments:[]}; }
 function openForm(id, prefill){
   const src = id ? S.bills.get(id) : null;
   S.form = src ? Object.assign(blankBill(), JSON.parse(JSON.stringify(src))) : Object.assign(blankBill(), prefill || {});
   const f = S.form;
   if (src && !src.kind) f.kind = 'aata';
+  if (src) f.wt3 = src.wt3 === true || src.status === 'draft';   // a finished older bill keeps its old rounding; a draft is not finished yet, so it uses the exact weight
   setupItems(f, src);
   if (src && src.status !== 'draft'){
     const adv = (src.payments || []).filter(p => p.advance);
@@ -1307,7 +1312,7 @@ function buildSheet(tab){
       }
       const txt = TEXT_NAMES.has(name);
       const st = {border, alignment:{horizontal: txt ? 'left' : 'center', vertical:'center', wrapText: txt}};
-      if (cell.t === 'n'){ st.numFmt = MONEY_NAMES.has(name) ? INR_FMT : QTY_NAMES.has(name) ? '0.00' : '0'; }
+      if (cell.t === 'n'){ st.numFmt = MONEY_NAMES.has(name) ? INR_FMT : QTY_NAMES.has(name) ? '0.00#' : '0'; }
       cell.s = st;
     }
   }
@@ -2117,4 +2122,5 @@ $('#tab-cust').onclick = () => leaveForm(() => go('customers'));
 $('#tab-grain').onclick = () => leaveForm(() => go('glist'));
 $('#saveStatus').onclick = openDataPanel;
 startData();
+window.__deoratan = { calc, S, openForm, go };   // used by the automated tests only
 })();
