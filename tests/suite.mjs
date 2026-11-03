@@ -19,12 +19,14 @@ const near = (name, got, want) => check(name, Math.abs(Number(got) - Number(want
 const r2 = (n) => Math.round(n * 100) / 100;
 const inr = (n) => (Math.round(n * 100) / 100).toLocaleString('en-IN', { maximumFractionDigits: 2 });
 const SIZEKG = { LD: 30, '25.1kg': 25.1, '30kg': 30 };
-const lineQ = (it) => r2(it.qty !== undefined ? it.qty : it.bags * (it.kg ?? SIZEKG[it.size]) / 100);
-function saleBill({ items, discount = 0, gst = 'none', freight = 0 }) {
-  const lines = items.map(it => { const q = lineQ(it); return { q, amt: r2(q * it.rate) }; });
+const r3 = (n) => Math.round(n * 1000) / 1000;
+// Aata bills made from 3 Nov 2026 use the exact weight (no rounding to 0.01 qtl); grain sale lines and old Aata bills round to 0.01
+const lineQ = (it, exact) => it.qty !== undefined ? r2(it.qty) : (exact ? r3 : r2)(it.bags * (it.kg ?? SIZEKG[it.size]) / 100);
+function saleBill({ items, discount = 0, gst = 'none', freight = 0, exact = false }) {
+  const lines = items.map(it => { const q = lineQ(it, exact); return { q, amt: r2(q * it.rate) }; });
   const amount = r2(lines.reduce((t, l) => t + l.amt, 0)), taxable = r2(amount - discount);
   const sg = gst === 'intra' ? r2(taxable * 0.025) : 0, ig = gst === 'inter' ? r2(taxable * 0.05) : 0;
-  return { lines, amount, taxable, sgst: sg, cgst: sg, igst: ig, final: r2(taxable + 2 * sg + ig + freight), qtl: r2(lines.reduce((t, l) => t + l.q, 0)) };
+  return { lines, amount, taxable, sgst: sg, cgst: sg, igst: ig, final: r2(taxable + 2 * sg + ig + freight), qtl: (exact ? r3 : r2)(lines.reduce((t, l) => t + l.q, 0)) };
 }
 function purchase({ grain, vehicle, gross, rate, discount = 0 }) {
   const cut = grain === 'dhan' ? 1 : 0.3;
@@ -128,7 +130,7 @@ const A1 = { items: [
   { prod: 'aata', bags: 33, size: '25.1kg', rate: 2650 },
   { prod: 'aata', bags: 12, size: 'other', kg: 47.5, rate: 2700 },
   { prod: 'chapad', bags: 20, size: 'other', kg: 40, rate: 1800 }], discount: 1250, gst: 'intra', freight: 2200 };
-const oA1 = saleBill(A1);
+const oA1 = saleBill({ ...A1, exact: true });
 await p.getByRole('button', { name: 'New bill' }).click();
 eq('new bill number', await p.locator('h1').innerText(), 'New bill · No. 01');
 await party({ mobile: '9876543210', name: 'Shri Balaji Laghu Udyog, Bhopal', location: 'Bhopal', gst: '23AKDPK9279G1ZD' });
@@ -156,6 +158,26 @@ check('advance & balance rows', inv.adv.length === 2 && inv.adv[0].includes('UPI
 check('mobile printed', (await txt('.paperbox .inv .partyblk')).includes('9876543210'));
 check('transport printed', (await txt('.paperbox .inv .foot')).includes('MP04 GA 7788'));
 check('bill fits on the slip', await fits());
+check('25.1 kg line shows the exact weight 8.283 qtl (no rounding)', inv.rows[2].includes('8.283'), inv.rows[2]);
+check('total weight shows 3 decimals', inv.tot.includes(String(oA1.qtl)), inv.tot + ' / ' + oA1.qtl);
+
+sec('Aata exact weight (BIL: 5 bags of 25.1 kg = 1.255 qtl, no rounding) · old bills keep their old totals');
+const wtChk = await p.evaluate(() => {
+  const { calc } = window.__deoratan;
+  const mk = (wt3, bags = '5') => ({ id: 'x', kind: 'aata', status: 'final', wt3, items: [{ id: 'a', bags, size: '25.1kg', bagKg: '25.1', rate: '2800' }], payments: [] });
+  const nw = calc(mk(true)), old = calc(mk(undefined, '7')), nw7 = calc(mk(true, '7'));
+  const sale = calc({ id: 'w', kind: 'gsale', status: 'final', wt3: true, grain: 'wheat', items: [{ id: 'g', bags: '33', size: 'other', bagKg: '25.1', rate: '2500', type: 'Lota' }], payments: [] });
+  return { nw: [nw.qtl, nw.amount, nw.final], old: [old.qtl, old.amount, old.final], nw7: [nw7.qtl, nw7.amount], sale: [sale.qtl, sale.amount] };
+});
+eq('new Aata bill: 5 x 25.1 kg = 1.255 qtl', wtChk.nw[0], 1.255);
+eq('new Aata bill: amount at 2800/qtl is 3514 (no 500 g charged)', wtChk.nw[1], 3514);
+eq('old Aata bill (saved before): 7 bags x 25.1 kg still rounds to 1.76 qtl', wtChk.old[0], 1.76);
+eq('old Aata bill amount unchanged (4928)', wtChk.old[1], 4928);
+eq('same 7 bags on a new bill: exact 1.757 qtl', wtChk.nw7[0], 1.757);
+eq('same 7 bags on a new bill: amount 4919.6', wtChk.nw7[1], 4919.6);
+eq('wheat sale by bags still rounds to 0.01 qtl', wtChk.sale[0], 8.28);
+
+
 eq('status pill', await txt('.head .pill'), 'Partly paid');
 await p.locator('.paperbox .inv').screenshot({ path: OUT + '/A1-invoice.png' });
 const [dlA] = await Promise.all([p.waitForEvent('download'), p.getByRole('button', { name: 'Download bill (PDF)' }).click()]);
@@ -514,6 +536,17 @@ await newGrain('wheat', 'gsale');
 check('no sideways scroll on form', await p.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
 await p.screenshot({ path: OUT + '/M-form-phone.png', fullPage: true });
 
+sec('Aata exact weight · editing old bills and drafts');
+const keepOld = await p.evaluate(async () => {
+  const { S, openForm, go } = window.__deoratan;
+  S.bills.set('legacy1', { id: 'legacy1', kind: 'aata', status: 'final', invNo: '98', date: '2026-10-01', party: 'Old', items: [{ id: 'a', bags: '5', size: '25.1kg', bagKg: '25.1', rate: '2800' }], payments: [] });
+  S.bills.set('legacyD', { id: 'legacyD', kind: 'aata', status: 'draft', invNo: '', date: '2026-10-01', party: 'Draft', items: [{ id: 'a', bags: '5', size: '25.1kg', bagKg: '25.1', rate: '2800' }], payments: [] });
+  openForm('legacy1'); const a = S.form.wt3; openForm('legacyD'); const d = S.form.wt3; openForm(null); const n = S.form.wt3;
+  S.bills.delete('legacy1'); S.bills.delete('legacyD'); go('list'); return { a, d, n };
+});
+eq('editing an old final bill keeps its old rounding', keepOld.a, false);
+eq('an unfinished draft from before switches to exact weight', keepOld.d, true);
+eq('a new bill uses exact weight', keepOld.n, true);
 console.log('\nJS ERRORS:', errors.length ? errors : 'none');
 console.log(`\nRESULT: ${pass} passed, ${fail} failed`);
 if (fails.length) console.log('FAILED:\n - ' + fails.join('\n - '));
