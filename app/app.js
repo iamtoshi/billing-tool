@@ -1525,7 +1525,7 @@ function renderCustomers(){
   const rows = all.filter(c => !q || c.name.toLowerCase().includes(q) || (c.mobile||'').includes(q) || (c.location||'').toLowerCase().includes(q));
   $('#view').innerHTML =
     '<div class="head"><div><h1>Parties</h1><p class="sub">Customers and sellers. Open a party to see their ledger: every bill, purchase and payment, with the balance after each.</p></div>'+
-    '<div class="acts"><button class="btn" type="button" id="addOld">+ Add old dues</button></div></div>'+
+    '</div>'+
     '<div class="filters"><label for="cq" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)">Search parties</label>'+
     '<input id="cq" class="search" type="search" placeholder="Search by name, mobile or location" value="'+esc(S.cq||'')+'"></div>'+
     '<div class="tablebox"><table class="list"><thead><tr><th>Party</th><th>Mobile</th><th>Location</th><th class="r">Entries</th><th>Last entry</th><th class="r">Balance ₹</th><th><span style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)">Actions</span></th></tr></thead><tbody>'+
@@ -1536,7 +1536,6 @@ function renderCustomers(){
   $('#cq').oninput = (e) => { S.cq = e.target.value; const pos = e.target.selectionStart; renderCustomers(); const el = $('#cq'); el.focus(); el.setSelectionRange(pos,pos); };
   document.querySelectorAll('[data-led]').forEach(b => b.onclick = () => go('ledger', b.dataset.led));
   document.querySelectorAll('[data-old]').forEach(b => b.onclick = () => { const c = all.find(x => x.key === b.dataset.old); if (c) openOpening(c, true); });
-  $('#addOld').onclick = () => openOpening(null);
 }
 
 function renderLedger(){

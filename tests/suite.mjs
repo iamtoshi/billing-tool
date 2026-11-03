@@ -426,6 +426,7 @@ near('Balaji balance (Aata + wheat sale − advances)', money(await txt('.ledsum
 await p.getByRole('button', { name: '← Parties' }).click();
 const balajiRow = () => p.locator('tr', { hasText: 'Shri Balaji' });
 await p.screenshot({ path: OUT + '/parties-list.png' });
+eq('no "+ Add old dues" button at the top of the Parties page', await p.locator('#addOld').count(), 0);
 eq('row button says Add old dues', await balajiRow().locator('[data-old]').innerText(), 'Add old dues');
 await balajiRow().locator('[data-old]').click();
 check('dialog is for that party', (await txt('#dlgT')).includes('Shri Balaji'), await txt('#dlgT'));
