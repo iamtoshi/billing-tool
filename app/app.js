@@ -1529,11 +1529,12 @@ function renderCustomers(){
     '<input id="cq" class="search" type="search" placeholder="Search by name, mobile or location" value="'+esc(S.cq||'')+'"></div>'+
     '<div class="tablebox"><table class="list"><thead><tr><th>Party</th><th>Mobile</th><th>Location</th><th class="r">Entries</th><th>Last entry</th><th class="r">Balance ₹</th><th><span style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)">Actions</span></th></tr></thead><tbody>'+
     (rows.length ? rows.map(c => '<tr><td>'+esc(c.name)+'</td><td class="num">'+esc(c.mobile||'—')+'</td><td>'+esc(c.location||'—')+'</td><td class="r num">'+c.bills.length+'</td><td>'+esc(dmy(c.last)||'—')+'</td>'+
-      '<td class="r num'+(c.balance > 0.004 ? ' owe' : '')+'">'+inr(Math.abs(c.balance))+(c.balance > 0.004 ? ' <span class="baltag">to collect</span>' : c.balance < -0.004 ? ' <span class="baltag pay">we owe</span>' : '')+'</td><td><button class="btn small" type="button" data-led="'+esc(c.key)+'">Open ledger</button></td></tr>').join('')
+      '<td class="r num'+(c.balance > 0.004 ? ' owe' : '')+'">'+inr(Math.abs(c.balance))+(c.balance > 0.004 ? ' <span class="baltag">to collect</span>' : c.balance < -0.004 ? ' <span class="baltag pay">we owe</span>' : '')+'</td><td><div class="rowacts"><button class="btn small" type="button" data-led="'+esc(c.key)+'">Open ledger</button><button class="btn small" type="button" data-old="'+esc(c.key)+'">'+(num((custRec(c.key)||{}).opening) ? 'Edit old dues' : 'Add old dues')+'</button></div></td></tr>').join('')
       : '<tr><td colspan="7" class="empty">'+(all.length ? 'No parties match this search.' : 'Parties appear here after their first bill or purchase.')+'</td></tr>')+
     '</tbody></table></div>';
   $('#cq').oninput = (e) => { S.cq = e.target.value; const pos = e.target.selectionStart; renderCustomers(); const el = $('#cq'); el.focus(); el.setSelectionRange(pos,pos); };
   document.querySelectorAll('[data-led]').forEach(b => b.onclick = () => go('ledger', b.dataset.led));
+  document.querySelectorAll('[data-old]').forEach(b => b.onclick = () => { const c = all.find(x => x.key === b.dataset.old); if (c) openOpening(c, true); });
   $('#addOld').onclick = () => openOpening(null);
 }
 
@@ -1574,7 +1575,7 @@ function renderLedger(){
 }
 
 /* old dues: for a customer on the ledger, or a new one from the Customers page */
-function openOpening(c){
+function openOpening(c, stayOnList){
   const r = c ? (custRec(c.key) || {}) : {};
   openDialog('<h2 id="dlgT">'+(c ? 'Old dues for '+esc(c.name) : 'Add a customer’s old dues')+'</h2>'+
     '<p class="note" style="font-size:14px">Money they owed before you started using this app. It is the first line of their ledger.</p>'+
@@ -1603,7 +1604,7 @@ function openOpening(c){
     const rec = Object.assign({payments:[]}, S.customers[key] || {}, info, {opening:amt, openingDate:oDate || todayISO()});
     S.customers[key] = rec;
     await persist();
-    closeDialog(); toast('Old dues saved'); go('ledger', key);
+    closeDialog(); toast('Old dues saved'+(c ? ' for '+c.name : '')); if (stayOnList) renderCustomers(); else go('ledger', key);
   };
 }
 

@@ -422,6 +422,24 @@ await p.getByRole('button', { name: '← Parties' }).click();
 await p.locator('tr', { hasText: 'Shri Balaji' }).getByRole('button', { name: 'Open ledger' }).click();
 const balajiBal = r2(oA1.final - 50000 + 0 + oW1.final - 100000); // bill 01, deleted bill 04 gone, GS-01
 near('Balaji balance (Aata + wheat sale − advances)', money(await txt('.ledsum .card.big b')), balajiBal);
+// old dues straight from the Parties list: one click per party, no name / mobile / address asked
+await p.getByRole('button', { name: '← Parties' }).click();
+const balajiRow = () => p.locator('tr', { hasText: 'Shri Balaji' });
+await p.screenshot({ path: OUT + '/parties-list.png' });
+eq('row button says Add old dues', await balajiRow().locator('[data-old]').innerText(), 'Add old dues');
+await balajiRow().locator('[data-old]').click();
+check('dialog is for that party', (await txt('#dlgT')).includes('Shri Balaji'), await txt('#dlgT'));
+eq('no name / mobile / location asked', await p.locator('#oName, #oMob, #oLoc').count(), 0);
+await p.fill('#oAmt', '1000'); await p.fill('#oDate', '02/11/2026'); await p.getByRole('button', { name: 'Save', exact: true }).click(); await p.waitForTimeout(300);
+check('stays on the Parties list', (await p.locator('h1').innerText()).includes('Parties'), await p.locator('h1').innerText());
+eq('row button now says Edit old dues', await balajiRow().locator('[data-old]').innerText(), 'Edit old dues');
+await balajiRow().getByRole('button', { name: 'Open ledger' }).click();
+near('balance up by the old dues', money(await txt('.ledsum .card.big b')), r2(balajiBal + 1000));
+check('ledger shows Opening balance 1,000', (await p.locator('table.ledger tbody tr').allInnerTexts()).some(t => t.includes('Opening balance') && t.includes('1,000')));
+await p.getByRole('button', { name: '← Parties' }).click();
+await balajiRow().locator('[data-old]').click(); await p.fill('#oAmt', '0'); await p.getByRole('button', { name: 'Save', exact: true }).click(); await p.waitForTimeout(300);
+await balajiRow().getByRole('button', { name: 'Open ledger' }).click();
+near('removing the old dues restores the balance', money(await txt('.ledsum .card.big b')), balajiBal);
 const [pop] = await Promise.all([p.waitForEvent('popup'), p.locator('[data-pdf]').first().click()]);
 check('ledger opens invoice PDF', !!pop); await pop.close();
 
