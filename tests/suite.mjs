@@ -426,7 +426,6 @@ near('Balaji balance (Aata + wheat sale − advances)', money(await txt('.ledsum
 await p.getByRole('button', { name: '← Parties' }).click();
 const balajiRow = () => p.locator('tr', { hasText: 'Shri Balaji' });
 await p.screenshot({ path: OUT + '/parties-list.png' });
-eq('no "+ Add old dues" button at the top of the Parties page', await p.locator('#addOld').count(), 0);
 eq('row button says Add old dues', await balajiRow().locator('[data-old]').innerText(), 'Add old dues');
 await balajiRow().locator('[data-old]').click();
 check('dialog is for that party', (await txt('#dlgT')).includes('Shri Balaji'), await txt('#dlgT'));
@@ -626,6 +625,38 @@ for (const [w, h, nm] of sizes) {
   else check(nm + ' · bill payment dialog reachable', false, 'no pay button found');
 }
 await p.setViewportSize({ width: 1280, height: 1000 });
+
+
+/* ================================================================ */
+sec('Old dues from the top button: auto-fill by mobile, blocked when already added, new party allowed');
+await go('Parties');
+eq('top "+ Add old dues" button is back', await p.locator('#addOld').count(), 1);
+await p.locator('#addOld').click();
+await p.fill('#oMob', '9123456780'); await p.waitForTimeout(150);
+await p.screenshot({ path: OUT + '/olddues-blocked.png' });
+eq('existing mobile fills the party name', await p.inputValue('#oName'), 'Gupta Kirana Store');
+check('already-added party: error says go to the ledger', (await txt('#oErr')).includes('already been added') && (await txt('#oErr')).includes('ledger'), await txt('#oErr'));
+check('already-added party: Save is disabled', await p.locator('#oSave').isDisabled());
+await p.fill('#oMob', '9876543210'); await p.waitForTimeout(150);
+check('party without old dues: name filled in and locked', (await p.inputValue('#oName')).includes('Shri Balaji') && await p.locator('#oName').evaluate(e => e.readOnly));
+check('party without old dues: no error, Save enabled', await p.locator('#oErr').isHidden() && !(await p.locator('#oSave').isDisabled()));
+await p.fill('#oAmt', '700'); await p.fill('#oDate', '01/11/2026'); await p.getByRole('button', { name: 'Save', exact: true }).click(); await p.waitForTimeout(300);
+check('saved against the existing party (ledger opens)', (await p.locator('h1').innerText()).includes('Shri Balaji'), await p.locator('h1').innerText());
+check('ledger shows Opening balance 700', (await p.locator('table.ledger tbody tr').allInnerTexts()).some(t => t.includes('Opening balance') && t.includes('700')));
+await go('Parties'); await p.locator('#addOld').click();
+await p.fill('#oMob', '9876543210'); await p.waitForTimeout(150);
+check('Balaji now blocked too (old dues just added)', await p.locator('#oSave').isDisabled() && (await txt('#oErr')).includes('already been added'));
+await p.fill('#oMob', ''); await p.fill('#oName', 'gupta kirana store'); await p.waitForTimeout(150);
+check('typing an existing name (no mobile) is blocked as well', await p.locator('#oSave').isDisabled() && (await txt('#oErr')).includes('already been added'));
+await p.fill('#oName', ''); await p.fill('#oMob', '9000000001'); await p.fill('#oName', 'Brand New Old Dues Party'); await p.fill('#oLoc', 'Indore'); await p.waitForTimeout(150);
+check('a party not in the app yet: allowed', await p.locator('#oErr').isHidden() && !(await p.locator('#oSave').isDisabled()));
+await p.fill('#oAmt', '1234'); await p.getByRole('button', { name: 'Save', exact: true }).click(); await p.waitForTimeout(300);
+near('new party ledger balance = its old dues', money(await txt('.ledsum .card.big b')), 1234);
+await go('Parties');
+check('new party is in the list with the check mark', (await p.locator('tr', { hasText: 'Brand New Old Dues Party' }).locator('.oldtag').count()) === 1);
+// put Balaji back as it was
+await p.locator('tr', { hasText: 'Shri Balaji' }).getByRole('button', { name: 'Open ledger' }).click();
+await p.locator('#ledOpen').click(); await p.fill('#oAmt', '0'); await p.getByRole('button', { name: 'Save', exact: true }).click(); await p.waitForTimeout(300);
 
 console.log('\nJS ERRORS:', errors.length ? errors : 'none');
 console.log(`\nRESULT: ${pass} passed, ${fail} failed`);

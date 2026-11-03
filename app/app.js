@@ -1525,7 +1525,7 @@ function renderCustomers(){
   const rows = all.filter(c => !q || c.name.toLowerCase().includes(q) || (c.mobile||'').includes(q) || (c.location||'').toLowerCase().includes(q));
   $('#view').innerHTML =
     '<div class="head"><div><h1>Parties</h1><p class="sub">Customers and sellers. Open a party to see their ledger: every bill, purchase and payment, with the balance after each.</p></div>'+
-    '</div>'+
+    '<div class="acts"><button class="btn" type="button" id="addOld">+ Add old dues</button></div></div>'+
     '<div class="filters"><label for="cq" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)">Search parties</label>'+
     '<input id="cq" class="search" type="search" placeholder="Search by name, mobile or location" value="'+esc(S.cq||'')+'"></div>'+
     '<div class="tablebox"><table class="list"><thead><tr><th>Party</th><th>Mobile</th><th>Location</th><th class="r">Entries</th><th>Last entry</th><th class="r">Balance ₹</th><th><span style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)">Actions</span></th></tr></thead><tbody>'+
@@ -1535,6 +1535,7 @@ function renderCustomers(){
     '</tbody></table></div>';
   $('#cq').oninput = (e) => { S.cq = e.target.value; const pos = e.target.selectionStart; renderCustomers(); const el = $('#cq'); el.focus(); el.setSelectionRange(pos,pos); };
   document.querySelectorAll('[data-led]').forEach(b => b.onclick = () => go('ledger', b.dataset.led));
+  $('#addOld').onclick = () => openOpening(null);
   document.querySelectorAll('[data-old]').forEach(b => b.onclick = () => { const c = all.find(x => x.key === b.dataset.old); if (c) openOpening(c, true); });
 }
 
@@ -1580,7 +1581,7 @@ function openOpening(c, stayOnList){
   openDialog('<h2 id="dlgT">'+(c ? 'Old dues for '+esc(c.name) : 'Add a customer’s old dues')+'</h2>'+
     '<p class="note" style="font-size:14px">Money they owed before you started using this app. It is the first line of their ledger.</p>'+
     (c ? '' :
-      '<div class="field"><label for="oMob">Mobile no.</label><input id="oMob" type="tel" inputmode="numeric" placeholder="10 digits"><p class="err" id="oMobErr" hidden></p></div>'+
+      '<div class="field"><label for="oMob">Mobile no.</label><input id="oMob" type="tel" inputmode="numeric" placeholder="10 digits"><p class="err" id="oMobErr" hidden></p><p class="note" id="oFound" style="font-size:14px" hidden></p></div>'+
       '<div class="field"><label for="oName">Customer name and address <span class="req">*</span></label><input id="oName" type="text"></div>'+
       '<div class="field"><label for="oLoc">Location</label><input id="oLoc" type="text"></div>')+
     '<div class="dgrid"><div class="field"><label for="oAmt">Old dues (₹)</label><input id="oAmt" type="text" inputmode="decimal" value="'+esc(r.opening ? String(r.opening) : '')+'"></div>'+
@@ -1588,7 +1589,24 @@ function openOpening(c, stayOnList){
     '<p class="err" id="oErr" hidden></p>'+
     '<div class="btns"><button class="btn" type="button" id="oCancel">Cancel</button><button class="btn primary" type="button" id="oSave">Save</button></div>');
   let oDate = r.openingDate || todayISO(); wireDate('oDate', (iso) => { oDate = iso; });
-  if ($('#oMob')) $('#oMob').addEventListener('input', (e) => { e.target.value = e.target.value.replace(/\D/g,'').slice(0,10); });
+  // a party that already exists (found by mobile number, or by exact name when no mobile is typed)
+  const doneMsg = (x) => 'Old dues for '+x.name+' have already been added. To change them, open the party’s ledger and use Change.';
+  let found = null;
+  const lookup = () => {
+    const mob = $('#oMob').value, name = $('#oName').value.trim().toLowerCase(), all = allCustomers();
+    const nf = $('#oFound'), err = $('#oErr');
+    found = mob.length === 10 ? (all.find(x => x.mobile === mob) || null) : (!mob && name ? (all.find(x => x.name.trim().toLowerCase() === name) || null) : null);
+    $('#oName').readOnly = $('#oLoc').readOnly = !!(found && mob.length === 10);
+    if (found && mob.length === 10){ $('#oName').value = found.name; $('#oLoc').value = found.location || ''; }
+    nf.hidden = !found; if (found) nf.textContent = num((custRec(found.key)||{}).opening) > 0 ? '' : 'This party is already in the app. Name filled in.';
+    const blocked = !!found && num((custRec(found.key)||{}).opening) > 0;
+    err.hidden = !blocked; err.textContent = blocked ? doneMsg(found) : '';
+    $('#oSave').disabled = blocked;
+  };
+  if ($('#oMob')){
+    $('#oMob').addEventListener('input', (e) => { e.target.value = e.target.value.replace(/\D/g,'').slice(0,10); lookup(); });
+    $('#oName').addEventListener('input', lookup);
+  }
   $('#oCancel').onclick = closeDialog;
   $('#oSave').onclick = async () => {
     const amt = num($('#oAmt').value), err = $('#oErr');
@@ -1598,7 +1616,10 @@ function openOpening(c, stayOnList){
       const mob = $('#oMob').value, name = $('#oName').value.trim();
       if (mob && mob.length !== 10){ const e = $('#oMobErr'); e.textContent = 'Mobile number must be 10 digits. You typed '+mob.length+'.'; e.hidden = false; return; }
       if (!name){ err.textContent = 'Enter the customer’s name and address.'; err.hidden = false; return; }
-      key = custKey({mobile:mob, party:name}); info = {name, mobile:mob, location:$('#oLoc').value.trim()};
+      lookup();
+      if (found){ key = found.key; info = {name:found.name, mobile:found.mobile, location:found.location, gst:found.gst}; }
+      else { key = custKey({mobile:mob, party:name}); info = {name, mobile:mob, location:$('#oLoc').value.trim()}; }
+      if (num((custRec(key)||{}).opening) > 0){ err.textContent = doneMsg({name:info.name}); err.hidden = false; return; }
     }
     if (amt < 0){ err.textContent = 'Enter the amount they owe.'; err.hidden = false; return; }
     const rec = Object.assign({payments:[]}, S.customers[key] || {}, info, {opening:amt, openingDate:oDate || todayISO()});
