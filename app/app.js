@@ -949,7 +949,8 @@ function wireDate(id, onPick, onBad){
 }
 document.addEventListener('click', (e) => {
   document.querySelectorAll('.calpop:not([hidden])').forEach(p => {
-    if (!p.parentElement.contains(e.target)){ p.hidden = true; const b = p.parentElement.querySelector('.calbtn'); if (b) b.setAttribute('aria-expanded','false'); }
+    // composedPath: the month arrows redraw the calendar, so e.target is already detached by now and must not count as 'outside'
+    if (!e.composedPath().includes(p.parentElement)){ p.hidden = true; const b = p.parentElement.querySelector('.calbtn'); if (b) b.setAttribute('aria-expanded','false'); }
   });
 });
 function showErr(k, msg){
@@ -1529,7 +1530,7 @@ function renderCustomers(){
     '<input id="cq" class="search" type="search" placeholder="Search by name, mobile or location" value="'+esc(S.cq||'')+'"></div>'+
     '<div class="tablebox"><table class="list"><thead><tr><th>Party</th><th>Mobile</th><th>Location</th><th class="r">Entries</th><th>Last entry</th><th class="r">Balance ₹</th><th><span style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)">Actions</span></th></tr></thead><tbody>'+
     (rows.length ? rows.map(c => '<tr><td>'+esc(c.name)+'</td><td class="num">'+esc(c.mobile||'—')+'</td><td>'+esc(c.location||'—')+'</td><td class="r num">'+c.bills.length+'</td><td>'+esc(dmy(c.last)||'—')+'</td>'+
-      '<td class="r num'+(c.balance > 0.004 ? ' owe' : '')+'">'+inr(Math.abs(c.balance))+(c.balance > 0.004 ? ' <span class="baltag">to collect</span>' : c.balance < -0.004 ? ' <span class="baltag pay">we owe</span>' : '')+'</td><td><div class="rowacts"><button class="btn small" type="button" data-led="'+esc(c.key)+'">Open ledger</button>'+(num((custRec(c.key)||{}).opening) ? '' : '<button class="btn small" type="button" data-old="'+esc(c.key)+'">Add old dues</button>')+'</div></td></tr>').join('')
+      '<td class="r num'+(c.balance > 0.004 ? ' owe' : '')+'">'+inr(Math.abs(c.balance))+(c.balance > 0.004 ? ' <span class="baltag">to collect</span>' : c.balance < -0.004 ? ' <span class="baltag pay">we owe</span>' : '')+'</td><td><div class="rowacts"><button class="btn small" type="button" data-led="'+esc(c.key)+'">Open ledger</button>'+(num((custRec(c.key)||{}).opening) ? '<span class="oldtag" title="Old dues are already added. To change them, open the ledger.">✓ Old dues added</span>' : '<button class="btn small" type="button" data-old="'+esc(c.key)+'">Add old dues</button>')+'</div></td></tr>').join('')
       : '<tr><td colspan="7" class="empty">'+(all.length ? 'No parties match this search.' : 'Parties appear here after their first bill or purchase.')+'</td></tr>')+
     '</tbody></table></div>';
   $('#cq').oninput = (e) => { S.cq = e.target.value; const pos = e.target.selectionStart; renderCustomers(); const el = $('#cq'); el.focus(); el.setSelectionRange(pos,pos); };

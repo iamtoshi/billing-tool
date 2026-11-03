@@ -429,10 +429,13 @@ await p.screenshot({ path: OUT + '/parties-list.png' });
 eq('row button says Add old dues', await balajiRow().locator('[data-old]').innerText(), 'Add old dues');
 await balajiRow().locator('[data-old]').click();
 check('dialog is for that party', (await txt('#dlgT')).includes('Shri Balaji'), await txt('#dlgT'));
+
 eq('no name / mobile / location asked', await p.locator('#oName, #oMob, #oLoc').count(), 0);
 await p.fill('#oAmt', '1000'); await p.fill('#oDate', '02/11/2026'); await p.getByRole('button', { name: 'Save', exact: true }).click(); await p.waitForTimeout(300);
 check('stays on the Parties list', (await p.locator('h1').innerText()).includes('Parties'), await p.locator('h1').innerText());
 eq('once old dues exist, the row has no old-dues button (editing is only inside the party)', await balajiRow().locator('[data-old]').count(), 0);
+check('row shows a check mark: Old dues added', (await balajiRow().locator('.oldtag').innerText()).includes('✓') && (await balajiRow().locator('.oldtag').innerText()).includes('Old dues added'));
+eq('no check mark on a party without old dues', await p.locator('tr', { hasText: 'Buyer soybean' }).locator('.oldtag').count(), 0);
 check('Open ledger is still there', await balajiRow().getByRole('button', { name: 'Open ledger' }).count() === 1);
 await balajiRow().getByRole('button', { name: 'Open ledger' }).click();
 near('balance up by the old dues', money(await txt('.ledsum .card.big b')), r2(balajiBal + 1000));
@@ -565,6 +568,64 @@ const keepOld = await p.evaluate(async () => {
 eq('editing an old final bill keeps its old rounding', keepOld.a, false);
 eq('an unfinished draft from before switches to exact weight', keepOld.d, true);
 eq('a new bill uses exact weight', keepOld.n, true);
+
+/* ================================================================ */
+sec('Calendars everywhere: every date box opens, moves between months, picks, Today, Escape, click-outside, not clipped');
+const calTest = async (label, id) => {
+  const sel = '#cal-' + id, btn = `[data-cal="${id}"]`, hid = () => p.evaluate((s) => document.querySelector(s).hidden, sel);
+  await p.locator(btn).scrollIntoViewIfNeeded();
+  await p.locator(btn).click(); await p.waitForTimeout(100);
+  check(label + ': calendar opens', !(await hid()));
+  const m0 = await p.locator(sel + ' .calhead b').innerText();
+  await p.locator(sel + ' [data-nav="1"]').click(); await p.waitForTimeout(80);
+  const m1 = await p.locator(sel + ' .calhead b').innerText();
+  check(label + ': next month works and stays open', !(await hid()) && m1 !== m0, m0 + ' -> ' + m1);
+  await p.locator(sel + ' [data-nav="-1"]').click(); await p.locator(sel + ' [data-nav="-1"]').click(); await p.waitForTimeout(80);
+  const m2 = await p.locator(sel + ' .calhead b').innerText();
+  check(label + ': earlier months work and stay open', !(await hid()) && m2 !== m0, m2);
+  // the last day of the month is visible and really on top (not clipped by the dialog / page)
+  await p.locator(sel + ' .calday').last().scrollIntoViewIfNeeded().catch(() => {});   // a person can scroll the page; a clipped calendar cannot be scrolled
+  const vis = await p.evaluate((s) => { const days = [...document.querySelectorAll(s + ' .calday')], d = days[days.length - 1], r = d.getBoundingClientRect(); const t = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return { onTop: t === d || d.contains(t), inView: r.bottom <= innerHeight + 2 && r.top >= -2 && r.right <= innerWidth + 2 && r.left >= -2, rect: [Math.round(r.top), Math.round(r.bottom), Math.round(r.left), Math.round(r.right)], vp: [innerWidth, innerHeight], sy: scrollY, docH: document.documentElement.scrollHeight }; }, sel);
+  check(label + ': whole calendar visible and clickable', vis.onTop && vis.inView, JSON.stringify(vis));
+  await p.locator(sel + ' .calday').nth(9).click(); await p.waitForTimeout(80);
+  const v = await p.inputValue('#' + id);
+  check(label + ': picking a day fills the box and closes', /^10\/\d\d\/\d{4}$/.test(v) && (await hid()), v);
+  await p.locator(btn).click(); await p.locator(sel + ' [data-today]').click(); await p.waitForTimeout(80);
+  const t = await p.inputValue('#' + id), td = new Date(), tdS = String(td.getDate()).padStart(2, '0') + '/' + String(td.getMonth() + 1).padStart(2, '0') + '/' + td.getFullYear();
+  check(label + ': Today button', t === tdS && (await hid()), t + ' vs ' + tdS);
+  await p.locator(btn).click(); await p.keyboard.press('Escape'); await p.waitForTimeout(80);
+  check(label + ': Escape closes it (page stays)', await hid());
+  await p.locator(btn).click(); await p.locator((await p.locator('#dlgT').count()) ? '#dlgT' : 'h1').first().click(); await p.waitForTimeout(80);
+  check(label + ': click outside closes it', await hid());
+  await p.fill('#' + id, '05/03/2026'); await p.locator(btn).click();
+  check(label + ': opens on the typed date (March 2026)', (await p.locator(sel + ' .calhead b').innerText()).includes('March 2026'));
+  await p.keyboard.press('Escape');
+};
+const sizes = [[1280, 1000, 'laptop'], [1366, 600, 'small laptop'], [390, 800, 'phone']];
+for (const [w, h, nm] of sizes) {
+  await p.setViewportSize({ width: w, height: h });
+  // Aata bill form
+  await go('Aata'); await p.getByRole('button', { name: 'New bill' }).click(); await p.waitForSelector('#f-date');
+  await calTest(nm + ' · bill date', 'f-date');
+  await p.locator('summary', { hasText: '5. Transport details' }).count();
+  if (await p.locator('[data-cal="f-dueDate"]').count()) await calTest(nm + ' · due date', 'f-dueDate');
+  // Grain purchase form
+  await go('Grains'); await newGrain('wheat', 'gpurchase'); await p.waitForSelector('#f-date');
+  await calTest(nm + ' · grain bill date', 'f-date');
+  // Parties: old dues from the list row, from the ledger, and a ledger payment
+  await go('Parties');
+  await p.locator('tr', { hasText: 'Buyer soybean' }).locator('[data-old]').click(); await calTest(nm + ' · old dues (list row)', 'oDate'); await p.getByRole('button', { name: 'Cancel' }).click();
+  await p.locator('tr', { hasText: 'Buyer soybean' }).getByRole('button', { name: 'Open ledger' }).click();
+  await p.getByRole('button', { name: 'Record payment' }).click(); await calTest(nm + ' · ledger payment', 'lDate'); await p.getByRole('button', { name: 'Cancel' }).click();
+  await p.locator('#ledOpen').click(); await calTest(nm + ' · old dues (ledger Change)', 'oDate'); await p.getByRole('button', { name: 'Cancel' }).click();
+  // payment dialog on a bill from the Aata list
+  await go('Aata');
+  const payBtn = p.locator('[data-act="pay"]').first();
+  if (await payBtn.count()) { await payBtn.click(); await calTest(nm + ' · bill payment', 'pDate'); await p.getByRole('button', { name: 'Cancel' }).click(); }
+  else check(nm + ' · bill payment dialog reachable', false, 'no pay button found');
+}
+await p.setViewportSize({ width: 1280, height: 1000 });
+
 console.log('\nJS ERRORS:', errors.length ? errors : 'none');
 console.log(`\nRESULT: ${pass} passed, ${fail} failed`);
 if (fails.length) console.log('FAILED:\n - ' + fails.join('\n - '));

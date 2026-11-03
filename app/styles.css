@@ -335,3 +335,4 @@ table.list.ledger{min-width:860px}
 
 /* Parties list: two buttons per row */
 .rowacts{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.oldtag{display:inline-flex;align-items:center;min-height:36px;padding:0 12px;border-radius:99px;font-size:14px;font-weight:600;background:var(--ok-bg);color:var(--ok-fg);white-space:nowrap}
