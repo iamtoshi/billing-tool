@@ -653,6 +653,7 @@ function redrawItems(){ Object.keys(S.errors).filter(k => /^i\d+-/.test(k)).forE
 /* ---------- mobile: 10-digit check and returning customers ---------- */
 /* every saved party (customers and sellers), newest details winning, for the picker and autofill */
 function partyIndex(exceptId){
+  refreshAlias();
   const map = new Map();
   const add = (key, info, date) => {
     const p = map.get(key) || {key, name:'', mobile:'', location:'', gst:'', last:'', count:0};
@@ -665,6 +666,7 @@ function partyIndex(exceptId){
   [...S.bills.values()].filter(b => b.id !== exceptId && b.status !== 'draft' && (b.party||'').trim())
     .sort((a,b) => (a.date||'').localeCompare(b.date||''))
     .forEach(b => { add(custKey(b), {name:b.party, mobile:b.mobile, location:b.location, gst:b.gst}, b.date).count++; });
+  Object.entries(S.customers).forEach(([k, r]) => { if (r.aliasKeys && r.aliasKeys.length && r.mobile && map.has(k)) map.get(k).mobile = r.mobile; });   // a changed number wins over the number on older bills
   return [...map.values()].filter(p => p.name).sort((a,b) => b.last.localeCompare(a.last) || a.name.localeCompare(b.name));
 }
 function customerByMobile(mob){ return (S.parties || []).find(p => p.mobile === mob) || null; }
@@ -1007,6 +1009,11 @@ async function submitForm(kind){
     toast(keys.length === 1 ? 'One field needs attention' : keys.length+' fields need attention');
     return;
   }
+  const clash = partyClash(f);
+  if (clash){
+    const pick = await askPartyClash(f, clash);
+    if (pick !== 'go'){ const n = $('#f-party'); if (n){ n.focus(); n.scrollIntoView({block:'center'}); } return; }
+  }
   const b = cleanForSave(f);
   if (kind === 'generate'){ b.status = 'final'; b.invNo = b.invNo || nextInvNo(kindOf(b));
     b.createdAt = new Date().toISOString(); }
@@ -1151,7 +1158,7 @@ function renderBill(){
   if ($('#pdf')) $('#pdf').onclick = (e) => downloadPDF(b, e.currentTarget);
   if ($('#pay')) $('#pay').onclick = () => openPay(b.id);
   $('#edit').onclick = () => openForm(b.id);
-  $('#toLedger').onclick = () => go('ledger', custKey(b));
+  $('#toLedger').onclick = () => { refreshAlias(); go('ledger', custKey(b)); };
   $('#delBill').onclick = () => askDeleteBill(b.id);
   $('#bookNo').onclick = () => openBookNo(b.id);
 }
@@ -1482,15 +1489,19 @@ function handleDlErr(err){
    A customer is known by mobile number (or by name when there's no mobile).
    Each customer's extra details (old dues, payments against old dues) live in S.customers,
    saved in the same bills file. Bills and their payments stay on the bills. */
-function custKey(o){ const m = String(o.mobile||'').trim(); return m ? 'm:'+m : 'n:'+String(o.party||o.name||'').trim().toLowerCase(); }
+let ALIAS = {};   // an older key of a party (its old mobile, or its name when it had none) -> the party's current key
+function refreshAlias(){ ALIAS = {}; Object.entries(S.customers || {}).forEach(([k, r]) => ((r && r.aliasKeys) || []).forEach(a => { ALIAS[a] = k; })); }
+function custKey(o){ const m = String(o.mobile||'').trim(), k = m ? 'm:'+m : 'n:'+String(o.party||o.name||'').trim().toLowerCase(); return ALIAS[k] || k; }
 function custRec(key){ return S.customers[key] || null; }
 function allCustomers(){
+  refreshAlias();
   const map = new Map();
   const add = (key, info) => { if (!map.has(key)) map.set(key, {key, name:'', mobile:'', location:'', gst:'', bills:[], last:''}); const c = map.get(key); Object.keys(info).forEach(k => { if (info[k]) c[k] = info[k]; }); return c; };
   Object.entries(S.customers).forEach(([key, r]) => add(key, {name:r.name, mobile:r.mobile, location:r.location, gst:r.gst}));
   [...S.bills.values()].filter(b => b.status !== 'draft' && (b.party||'').trim())
     .sort((a,b) => (a.date||'').localeCompare(b.date||''))
     .forEach(b => { const c = add(custKey(b), {name:b.party, mobile:b.mobile, location:b.location, gst:b.gst}); c.bills.push(b); c.last = b.date || c.last; });
+  Object.entries(S.customers).forEach(([k, r]) => { if (r.aliasKeys && r.aliasKeys.length && r.mobile && map.has(k)) map.get(k).mobile = r.mobile; });
   map.forEach(c => { c.lines = ledgerLines(c); c.balance = c.lines.length ? c.lines[c.lines.length-1].bal : 0; });
   return [...map.values()];
 }
@@ -1530,12 +1541,13 @@ function renderCustomers(){
     '<input id="cq" class="search" type="search" placeholder="Search by name, mobile or location" value="'+esc(S.cq||'')+'"></div>'+
     '<div class="tablebox"><table class="list"><thead><tr><th>Party</th><th>Mobile</th><th>Location</th><th class="r">Entries</th><th>Last entry</th><th class="r">Balance ₹</th><th><span style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)">Actions</span></th></tr></thead><tbody>'+
     (rows.length ? rows.map(c => '<tr><td>'+esc(c.name)+'</td><td class="num">'+esc(c.mobile||'—')+'</td><td>'+esc(c.location||'—')+'</td><td class="r num">'+c.bills.length+'</td><td>'+esc(dmy(c.last)||'—')+'</td>'+
-      '<td class="r num'+(c.balance > 0.004 ? ' owe' : '')+'">'+inr(Math.abs(c.balance))+(c.balance > 0.004 ? ' <span class="baltag">to collect</span>' : c.balance < -0.004 ? ' <span class="baltag pay">we owe</span>' : '')+'</td><td><div class="rowacts"><button class="btn small" type="button" data-led="'+esc(c.key)+'">Open ledger</button>'+(num((custRec(c.key)||{}).opening) ? '<span class="oldtag" title="Old dues are already added. To change them, open the ledger.">✓ Old dues added</span>' : '<button class="btn small" type="button" data-old="'+esc(c.key)+'">Add old dues</button>')+'</div></td></tr>').join('')
+      '<td class="r num'+(c.balance > 0.004 ? ' owe' : '')+'">'+inr(Math.abs(c.balance))+(c.balance > 0.004 ? ' <span class="baltag">to collect</span>' : c.balance < -0.004 ? ' <span class="baltag pay">we owe</span>' : '')+'</td><td><div class="rowacts"><button class="btn small" type="button" data-led="'+esc(c.key)+'">Open ledger</button>'+(num((custRec(c.key)||{}).opening) ? '<span class="oldtag" title="Old dues are already added. To change them, open the ledger.">✓ Old dues added</span>' : '<button class="btn small" type="button" data-old="'+esc(c.key)+'">Add old dues</button>')+'<button class="btn small" type="button" data-mob="'+esc(c.key)+'">'+(c.mobile ? 'Edit number' : 'Add number')+'</button></div></td></tr>').join('')
       : '<tr><td colspan="7" class="empty">'+(all.length ? 'No parties match this search.' : 'Parties appear here after their first bill or purchase.')+'</td></tr>')+
     '</tbody></table></div>';
   $('#cq').oninput = (e) => { S.cq = e.target.value; const pos = e.target.selectionStart; renderCustomers(); const el = $('#cq'); el.focus(); el.setSelectionRange(pos,pos); };
   document.querySelectorAll('[data-led]').forEach(b => b.onclick = () => go('ledger', b.dataset.led));
   $('#addOld').onclick = () => openOpening(null);
+  document.querySelectorAll('[data-mob]').forEach(b => b.onclick = () => { const c = all.find(x => x.key === b.dataset.mob); if (c) openMobile(c, () => renderCustomers()); });
   document.querySelectorAll('[data-old]').forEach(b => b.onclick = () => { const c = all.find(x => x.key === b.dataset.old); if (c) openOpening(c, true); });
 }
 
@@ -1549,7 +1561,7 @@ function renderLedger(){
   const hasBuy = c.bills.some(b => kindOf(b) === 'gpurchase'), hasSell = c.bills.some(b => kindOf(b) !== 'gpurchase') || !hasBuy;
   $('#view').innerHTML =
     '<div class="head"><div><button class="btn link" type="button" id="back" style="margin-left:-4px">← Parties</button>'+
-    '<h1>'+esc(c.name)+'</h1><p class="sub">'+[c.mobile, c.location, c.gst ? 'GST '+c.gst : ''].filter(Boolean).map(esc).join(' · ')+'</p></div>'+
+    '<h1>'+esc(c.name)+'</h1><p class="sub">'+[c.mobile, c.location, c.gst ? 'GST '+c.gst : ''].filter(Boolean).map(esc).join(' · ')+' <button class="btn link" type="button" id="ledMob">'+(c.mobile ? 'Edit number' : 'Add number')+'</button></p></div>'+
     '<div class="acts"><button class="btn" type="button" id="ledNew">New Aata bill</button><button class="btn" type="button" id="ledGrain">New grain bill</button><button class="btn primary" type="button" id="ledPay">Record payment</button></div></div>'+
     '<div class="ledsum">'+
       '<div class="card"><span class="k">Old dues</span><b class="num">₹'+inr(num(r.opening))+'</b><button class="btn link" type="button" id="ledOpen">'+(num(r.opening) ? 'Change' : 'Add old dues')+'</button></div>'+
@@ -1571,6 +1583,7 @@ function renderLedger(){
   $('#ledGrain').onclick = () => openGrainChooser({mobile:c.mobile||'', party:c.name||'', location:c.location||'', gst:c.gst||''});
   $('#ledPay').onclick = () => openLedgerPay(c);
   $('#ledOpen').onclick = () => openOpening(c);
+  $('#ledMob').onclick = () => openMobile(c, (key) => go('ledger', key));
   document.querySelectorAll('[data-pdf]').forEach(b => b.onclick = (e) => openInvoicePdf(S.bills.get(b.dataset.pdf), e.currentTarget));
   document.querySelectorAll('[data-bill]').forEach(b => b.onclick = () => go('bill', b.dataset.bill));
 }
@@ -1627,6 +1640,66 @@ function openOpening(c, stayOnList){
     await persist();
     closeDialog(); toast('Old dues saved'+(c ? ' for '+c.name : '')); if (stayOnList) renderCustomers(); else go('ledger', key);
   };
+}
+
+/* Change (or add) a party's mobile number. Their bills are left exactly as printed; the party just moves to the new number. */
+async function setPartyMobile(c, mob){
+  const nk = 'm:'+mob, old = S.customers[c.key] || {};
+  const rec = Object.assign({payments:[]}, old, {name:c.name, mobile:mob, location:c.location, gst:c.gst});
+  rec.aliasKeys = [...new Set([...(old.aliasKeys||[]), c.key])].filter(k => k !== nk);
+  if (c.key !== nk) delete S.customers[c.key];
+  S.customers[nk] = rec; refreshAlias();
+  await persist();
+  return nk;
+}
+function openMobile(c, done){
+  openDialog('<h2 id="dlgT">'+(c.mobile ? 'Change mobile number' : 'Add mobile number')+' · '+esc(c.name)+'</h2>'+
+    '<p class="note" style="font-size:14px">'+(c.mobile ? 'Now: <b class="num">'+esc(c.mobile)+'</b>. ' : '')+'Their earlier bills stay exactly as printed. All of them stay under this party, and new bills use the new number.</p>'+
+    '<div class="field"><label for="mNew">New mobile no.</label><input id="mNew" type="tel" inputmode="numeric" placeholder="10 digits" value="'+esc(c.mobile||'')+'"><p class="err" id="mErr" hidden></p></div>'+
+    '<div class="btns"><button class="btn" type="button" id="mCancel">Cancel</button><button class="btn primary" type="button" id="mSave">Save number</button></div>');
+  const inp = $('#mNew'); inp.addEventListener('input', () => { inp.value = inp.value.replace(/\D/g,'').slice(0,10); $('#mErr').hidden = true; });
+  $('#mCancel').onclick = closeDialog;
+  $('#mSave').onclick = async () => {
+    const mob = inp.value, err = $('#mErr'), fail = (t) => { err.textContent = t; err.hidden = false; };
+    if (mob.length !== 10) return fail('Mobile number must be 10 digits. You typed '+mob.length+'.');
+    if (mob === c.mobile) return fail('That is already this party’s number.');
+    const other = allCustomers().find(x => x.mobile === mob && x.key !== c.key);
+    if (other) return fail('This number already belongs to '+other.name+'. Use a different number.');
+    const key = await setPartyMobile(c, mob);
+    closeDialog(); toast('Mobile number saved for '+c.name); done(key);
+  };
+}
+
+/* On Create bill: a party name that is already saved with a different number must be sorted out first */
+const nameKey = (t) => String(t||'').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
+function partyClash(f){
+  const nk = nameKey(f.party), mob = String(f.mobile||'').trim();
+  if (!nk) return null;
+  const same = allCustomers().filter(x => nameKey(x.name) === nk);
+  if (!same.length || same.some(x => x.mobile === mob)) return null;
+  return same.sort((a,b) => (b.last||'').localeCompare(a.last||''))[0];
+}
+function askPartyClash(f, c){
+  const mob = String(f.mobile||'').trim();
+  return new Promise((resolve) => {
+    let settled = false; const end = (v) => { if (settled) return; settled = true; resolve(v); };
+    const title = mob ? (c.mobile ? '“'+esc(c.name)+'” already has a different number' : '“'+esc(c.name)+'” is already saved without a number')
+                      : '“'+esc(c.name)+'” is already saved with a number';
+    openDialog('<h2 id="dlgT">'+title+'</h2>'+
+      '<p class="note" style="font-size:15px">Saved: <b>'+esc(c.name)+'</b> · <span class="num">'+esc(c.mobile||'no number')+'</span>'+(c.location ? ' · '+esc(c.location) : '')+'<br>'+
+      'This bill: <b>'+esc(String(f.party||'').trim())+'</b> · <span class="num">'+esc(mob||'no number')+'</span></p>'+
+      '<p class="note" style="font-size:15px">The bill is not created yet. Choose one:</p>'+
+      '<div class="btns" style="flex-direction:column;align-items:stretch;gap:8px">'+
+      '<button class="btn" type="button" id="pcName">Change the name here (it is a different party)</button>'+
+      (mob ? '<button class="btn primary" type="button" id="pcRep">'+(c.mobile ? 'Replace their number '+esc(c.mobile)+' with '+esc(mob) : 'Save '+esc(mob)+' as their number')+'</button>'
+           : '<button class="btn primary" type="button" id="pcUse">Use the saved number '+esc(c.mobile)+'</button>')+
+      '</div>');
+    $('#pcName').onclick = () => { closeDialog(); end('name'); };
+    if ($('#pcRep')) $('#pcRep').onclick = async () => { await setPartyMobile(c, mob); closeDialog(); end('go'); };
+    if ($('#pcUse')) $('#pcUse').onclick = () => { f.mobile = c.mobile; const el = $('#f-mobile'); if (el) el.value = c.mobile; mobileStatus(); closeDialog(); end('go'); };
+    $('#scrim').addEventListener('click', (e) => { if (e.target.id === 'scrim') end('name'); }, {once:true});
+    $('#scrim').addEventListener('keydown', (e) => { if (e.key === 'Escape') end('name'); }, {once:true});
+  });
 }
 
 /* a payment from the ledger: against old dues or any bill with money still due */
