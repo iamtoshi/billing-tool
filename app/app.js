@@ -85,6 +85,7 @@ function itemsOf(b){
 }
 /* Aata bills made from 3 Nov 2026 (wt3) use the exact weight, no rounding to 0.01 qtl. Older bills keep the rounding they were made with, so their totals never change. */
 const r3 = (n) => Math.round(n*1000)/1000;
+const exactWt = (b) => b.wt3 === true || b.status === 'draft';   // new bills and unfinished drafts use the exact weight
 function itemCalc(it, kind, exact){
   if (kind === 'gsale'){
     const rate = num(it.rate), bags = looseWheat(it) ? 0 : num(it.bags);
@@ -123,9 +124,9 @@ function calc(b){
     const balance = r2(p.final - received);
     return Object.assign(p, {items:[], bags:0, qtl:p.net, sgst:0, cgst:0, igst:0, freight:0, received, advance, balance, status:payStatus(b, p.final, received, balance)});
   }
-  const items = itemsOf(b).map(it => Object.assign({}, it, itemCalc(it, kind, b.wt3 === true)));
+  const items = itemsOf(b).map(it => Object.assign({}, it, itemCalc(it, kind, exactWt(b))));
   const bags = items.reduce((t,i) => t + i.bags, 0);
-  const qtl = b.wt3 === true ? r3(items.reduce((t,i) => t + i.qtl, 0)) : r2(items.reduce((t,i) => t + i.qtl, 0));
+  const qtl = exactWt(b) ? r3(items.reduce((t,i) => t + i.qtl, 0)) : r2(items.reduce((t,i) => t + i.qtl, 0));
   const amount = r2(items.reduce((t,i) => t + i.amount, 0));
   const discount = r2(num(b.discount)), taxable = r2(amount - discount);   // GST is on the amount after discount
   const sgst = num(b.sgst), cgst = num(b.cgst), igst = num(b.igst), freight = num(b.freight);

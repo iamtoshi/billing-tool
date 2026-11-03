@@ -165,9 +165,9 @@ sec('Aata exact weight (BIL: 5 bags of 25.1 kg = 1.255 qtl, no rounding) · old 
 const wtChk = await p.evaluate(() => {
   const { calc } = window.__deoratan;
   const mk = (wt3, bags = '5') => ({ id: 'x', kind: 'aata', status: 'final', wt3, items: [{ id: 'a', bags, size: '25.1kg', bagKg: '25.1', rate: '2800' }], payments: [] });
-  const nw = calc(mk(true)), old = calc(mk(undefined, '7')), nw7 = calc(mk(true, '7'));
+  const nw = calc(mk(true)), old = calc(mk(undefined, '7')), nw7 = calc(mk(true, '7')), dr = calc(Object.assign(mk(undefined, '7'), { status: 'draft' }));
   const sale = calc({ id: 'w', kind: 'gsale', status: 'final', wt3: true, grain: 'wheat', items: [{ id: 'g', bags: '33', size: 'other', bagKg: '25.1', rate: '2500', type: 'Lota' }], payments: [] });
-  return { nw: [nw.qtl, nw.amount, nw.final], old: [old.qtl, old.amount, old.final], nw7: [nw7.qtl, nw7.amount], sale: [sale.qtl, sale.amount] };
+  return { nw: [nw.qtl, nw.amount, nw.final], old: [old.qtl, old.amount, old.final], nw7: [nw7.qtl, nw7.amount], dr: [dr.qtl, dr.amount], sale: [sale.qtl, sale.amount] };
 });
 eq('new Aata bill: 5 x 25.1 kg = 1.255 qtl', wtChk.nw[0], 1.255);
 eq('new Aata bill: amount at 2800/qtl is 3514 (no 500 g charged)', wtChk.nw[1], 3514);
@@ -175,6 +175,7 @@ eq('old Aata bill (saved before): 7 bags x 25.1 kg still rounds to 1.76 qtl', wt
 eq('old Aata bill amount unchanged (4928)', wtChk.old[1], 4928);
 eq('same 7 bags on a new bill: exact 1.757 qtl', wtChk.nw7[0], 1.757);
 eq('same 7 bags on a new bill: amount 4919.6', wtChk.nw7[1], 4919.6);
+eq('an unfinished draft from before uses the exact weight (1.757 qtl)', wtChk.dr[0], 1.757);
 eq('wheat sale by bags still rounds to 0.01 qtl', wtChk.sale[0], 8.28);
 
 
