@@ -432,14 +432,13 @@ check('dialog is for that party', (await txt('#dlgT')).includes('Shri Balaji'), 
 eq('no name / mobile / location asked', await p.locator('#oName, #oMob, #oLoc').count(), 0);
 await p.fill('#oAmt', '1000'); await p.fill('#oDate', '02/11/2026'); await p.getByRole('button', { name: 'Save', exact: true }).click(); await p.waitForTimeout(300);
 check('stays on the Parties list', (await p.locator('h1').innerText()).includes('Parties'), await p.locator('h1').innerText());
-eq('row button now says Edit old dues', await balajiRow().locator('[data-old]').innerText(), 'Edit old dues');
+eq('once old dues exist, the row has no old-dues button (editing is only inside the party)', await balajiRow().locator('[data-old]').count(), 0);
+check('Open ledger is still there', await balajiRow().getByRole('button', { name: 'Open ledger' }).count() === 1);
 await balajiRow().getByRole('button', { name: 'Open ledger' }).click();
 near('balance up by the old dues', money(await txt('.ledsum .card.big b')), r2(balajiBal + 1000));
 check('ledger shows Opening balance 1,000', (await p.locator('table.ledger tbody tr').allInnerTexts()).some(t => t.includes('Opening balance') && t.includes('1,000')));
-await p.getByRole('button', { name: '← Parties' }).click();
-await balajiRow().locator('[data-old]').click(); await p.fill('#oAmt', '0'); await p.getByRole('button', { name: 'Save', exact: true }).click(); await p.waitForTimeout(300);
-await balajiRow().getByRole('button', { name: 'Open ledger' }).click();
-near('removing the old dues restores the balance', money(await txt('.ledsum .card.big b')), balajiBal);
+await p.locator('#ledOpen').click(); await p.fill('#oAmt', '0'); await p.getByRole('button', { name: 'Save', exact: true }).click(); await p.waitForTimeout(300);
+near('editing inside the party: removing the old dues restores the balance', money(await txt('.ledsum .card.big b')), balajiBal);
 const [pop] = await Promise.all([p.waitForEvent('popup'), p.locator('[data-pdf]').first().click()]);
 check('ledger opens invoice PDF', !!pop); await pop.close();
 
