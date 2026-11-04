@@ -658,6 +658,69 @@ check('new party is in the list with the check mark', (await p.locator('tr', { h
 await p.locator('tr', { hasText: 'Shri Balaji' }).getByRole('button', { name: 'Open ledger' }).click();
 await p.locator('#ledOpen').click(); await p.fill('#oAmt', '0'); await p.getByRole('button', { name: 'Save', exact: true }).click(); await p.waitForTimeout(300);
 
+/* ================================================================ */
+sec('Same party name with a different number: blocked at Create bill; party numbers can be edited');
+const guptaRow = () => p.locator('tr', { hasText: 'Gupta Kirana Store' });
+await go('Parties');
+const gEntries0 = Number(await guptaRow().locator('td').nth(3).innerText());
+await guptaRow().getByRole('button', { name: 'Open ledger' }).click();
+const signedBal = async () => money(await txt('.ledsum .card.big b')) * (await p.locator('.ledsum .card.big.pay').count() ? -1 : 1);
+const gBal0 = await signedBal();
+const billsBefore = await p.evaluate(() => window.__deoratan.S.bills.size);
+await go('Aata'); await p.getByRole('button', { name: 'New bill' }).click();
+await party({ mobile: '9111111111', name: 'Gupta Kirana Store', location: 'Bhopal' });
+await aataItem(0, { bags: 10, size: '30kg', rate: 3000 });
+await p.getByRole('button', { name: 'Create bill' }).click(); await p.waitForTimeout(300);
+await p.screenshot({ path: OUT + '/party-clash.png' });
+check('clash dialog appears', await p.locator('.dialog').count() === 1 && (await txt('#dlgT')).includes('different number'), await txt('.dialog'));
+check('dialog shows the saved and the typed number', (await txt('.dialog')).includes('9123456780') && (await txt('.dialog')).includes('9111111111'));
+eq('no bill was created', await p.evaluate(() => window.__deoratan.S.bills.size), billsBefore);
+await p.locator('#pcName').click(); await p.waitForTimeout(150);
+check('Change the name: back on the form, nothing saved', (await p.locator('h1').innerText()).includes('New bill') && await p.locator('.dialog').count() === 0 && await p.evaluate(() => window.__deoratan.S.bills.size) === billsBefore);
+await p.fill('#f-party', 'Gupta  KIRANA store.'); // spacing, case and punctuation do not make it a different name
+await p.getByRole('button', { name: 'Create bill' }).click(); await p.waitForTimeout(300);
+check('same name written differently is still caught', await p.locator('#pcRep').count() === 1);
+await p.locator('#pcRep').click(); await p.waitForTimeout(500);
+check('Replace number: the bill is created', (await p.locator('h1').innerText()).startsWith('Bill no.'), await p.locator('h1').innerText());
+await go('Parties');
+eq('one Gupta row only (no duplicate party)', await guptaRow().count(), 1);
+eq('Gupta now shows the new number', (await guptaRow().locator('td').nth(1).innerText()).trim(), '9111111111');
+eq('old bills stay with the party (+1 entry)', Number(await guptaRow().locator('td').nth(3).innerText()), gEntries0 + 1);
+check('old bills still carry the number they were printed with', await p.evaluate(() => [...window.__deoratan.S.bills.values()].some(b => b.mobile === '9123456780' && /Gupta/.test(b.party))));
+// Parties tab: edit number
+await guptaRow().getByRole('button', { name: 'Edit number' }).click();
+await p.fill('#mNew', '9876543210'); await p.getByRole('button', { name: 'Save number' }).click();
+check('a number that belongs to another party is refused', (await txt('#mErr')).includes('already belongs to') && await p.locator('#mNew').count() === 1, await txt('.dialog'));
+await p.fill('#mNew', '12345'); await p.getByRole('button', { name: 'Save number' }).click();
+check('short number refused', (await txt('#mErr')).includes('10 digits'));
+await p.fill('#mNew', '9222222222'); await p.getByRole('button', { name: 'Save number' }).click(); await p.waitForTimeout(400);
+eq('list shows the edited number', (await guptaRow().locator('td').nth(1).innerText()).trim(), '9222222222');
+eq('still one Gupta row, same entries', Number(await guptaRow().locator('td').nth(3).innerText()), gEntries0 + 1);
+await guptaRow().getByRole('button', { name: 'Open ledger' }).click();
+check('ledger header has the new number', (await txt('.head .sub')).includes('9222222222'));
+const gBal1 = await signedBal();
+check('balance = earlier balance + the new bill (nothing lost, nothing doubled)', gBal1 > gBal0, gBal0 + ' -> ' + gBal1);
+await p.locator('#ledMob').click(); await p.fill('#mNew', '9333333333'); await p.getByRole('button', { name: 'Save number' }).click(); await p.waitForTimeout(400);
+check('number can be changed again from the ledger; ledger stays open', (await p.locator('h1').innerText()).includes('Gupta') && (await txt('.head .sub')).includes('9333333333'));
+near('balance unchanged by renumbering', await signedBal(), gBal1);
+// survives save + reload of the data file
+const saved = (await readFolder()).data;
+check('saved file keeps the party under the new number with its old keys', !!saved.customers['m:9333333333'] && saved.customers['m:9333333333'].aliasKeys.includes('m:9123456780'), JSON.stringify(Object.keys(saved.customers)));
+// bill with no number typed, name saved with a number
+await go('Aata'); await p.getByRole('button', { name: 'New bill' }).click();
+await party({ name: 'Shri Balaji Laghu Udyog Bhopal' });   // the app only auto-fills an exact name, so this one reaches the check
+await aataItem(0, { bags: 4, size: '30kg', rate: 3000 });
+await p.getByRole('button', { name: 'Create bill' }).click(); await p.waitForTimeout(300);
+await p.screenshot({ path: OUT + '/party-clash2.png' });
+check('no number typed but the name has one: blocked', (await txt('#dlgT')).includes('already saved with a number') && await p.locator('#pcUse').count() === 1);
+await p.locator('#pcUse').click(); await p.waitForTimeout(500);
+check('Use the saved number: bill created with it', (await p.locator('h1').innerText()).startsWith('Bill no.') && await p.evaluate(() => [...window.__deoratan.S.bills.values()].some(b => b.party.includes('Balaji') && b.mobile === '9876543210' && b.status === 'final')));
+// drafts are never blocked
+await go('Aata'); await p.getByRole('button', { name: 'New bill' }).click();
+await party({ mobile: '9444444444', name: 'Gupta Kirana Store' });
+await p.getByRole('button', { name: /Save for later/ }).click(); await p.waitForTimeout(300);
+eq('draft saves without the check', await p.locator('.dialog').count(), 0);
+
 console.log('\nJS ERRORS:', errors.length ? errors : 'none');
 console.log(`\nRESULT: ${pass} passed, ${fail} failed`);
 if (fails.length) console.log('FAILED:\n - ' + fails.join('\n - '));

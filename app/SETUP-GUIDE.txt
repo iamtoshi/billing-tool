@@ -69,6 +69,8 @@ C. EVERY DAY
 - Parties tab: one ledger per party (customers and sellers). Debit = bills to them and payments we make;
   Credit = payments we receive and purchases from them. "we owe" means we still have to pay them.
   Add old dues and record payments there; the PDF button opens that invoice or slip.
+  To change a party's mobile number, use Edit number (in the Parties list, or at the top of their ledger). Their old bills stay as printed.
+  When you create a bill with a name that is already saved under a different number, the app stops and asks you to change the name or replace the number.
 
 D. IF SOMETHING LOOKS WRONG
 - "Open my bills" screen: click it and choose Allow. Normal after Chrome restarts.
