@@ -38,8 +38,12 @@ const GRAINS = {
   tewda:   {en:'Tewda',   hi:'तेवड़ा',   hsn:'0713'},
   chana:   {en:'Chana',   hi:'चना',     hsn:'0713'},
   soybean: {en:'Soybean', hi:'सोयाबीन', hsn:'1201'},
-  dhan:    {en:'Dhan',    hi:'धान',     hsn:'1006', buyOnly:true, cutKg:1, labour:15}   // bought only
+  dhan:    {en:'Dhan',    hi:'धान',     hsn:'1006', buyOnly:true, cutKg:1, labour:15},   // bought only
+  other:   {en:'Other grains', hi:'अन्य अनाज', hsn:''}   // the office types the grain's name; sold loose, bought like wheat (300 g, labour by vehicle)
 };
+/* the grain's name on one bill: the typed name for "Other grains" */
+const typedGrain = (b) => String((b && b.grainOther) || '').trim();
+const billGrain = (b) => b && b.grain === 'other' ? (typedGrain(b) || 'Other grain') : grainName(b && b.grain);
 /* weight taken off per quintal bought: 300 g for most grains, 1 kg for dhan */
 const cutKgOf = (g) => (GRAINS[g] && GRAINS[g].cutKg) || 0.3;
 const cutLabel = (g) => cutKgOf(g) < 1 ? Math.round(cutKgOf(g)*1000)+' g' : cutKgOf(g)+' kg';
@@ -69,7 +73,7 @@ const kindOf = (b) => (b && b.kind) || 'aata';
 const isGrain = (b) => kindOf(b) !== 'aata';
 const KIND_WORD = {aata:'Bill', gsale:'Sale', gpurchase:'Purchase'};
 const grainName = (g) => GRAINS[g] ? GRAINS[g].en : 'Grain';
-const grainDesc = (g, type, brand) => [GRAINS[g] ? GRAINS[g].hi : '', g === 'wheat' ? type : '', g === 'wheat' ? brand : ''].filter(Boolean).join(' · ');
+const grainDesc = (g, type, brand, typed) => g === 'other' ? String(typed||'').trim() : [GRAINS[g] ? GRAINS[g].hi : '', g === 'wheat' ? type : '', g === 'wheat' ? brand : ''].filter(Boolean).join(' · ');
 const itemType = (it) => pickName(it.type, it.typeOther);
 /* a wheat line whose type is "Others" is sold loose like the other grains: quantity in quintal, no bags or brand */
 const looseWheat = (it) => it && it.type === OTHERS;
@@ -238,7 +242,7 @@ function rowHTML(b, grainCols){
     if (c.balance > 0) acts += '<button class="btn link" type="button" data-act="pay" data-id="'+b.id+'">Mark paid</button>';
   }
   const types = kindOf(b) === 'gpurchase' ? buyType(b) : b.grain === 'wheat' ? [...new Set((b.items||[]).map(itemType).filter(Boolean))].join(', ') : '';
-  const gc = grainCols ? '<td>'+esc(grainName(b.grain))+(types ? ' <span class="sub2">'+esc(types)+'</span>' : '')+'</td>'+
+  const gc = grainCols ? '<td>'+esc(billGrain(b))+(types ? ' <span class="sub2">'+esc(types)+'</span>' : '')+'</td>'+
     '<td><span class="kindtag '+kindOf(b)+'">'+KIND_WORD[kindOf(b)]+'</span></td>' : '';
   return '<tr class="'+(c.status==='overdue'?'overdue':'')+(c.status==='draft'?' draft':'')+'">'+
     '<td class="num">'+(b.invNo ? esc(b.invNo) : '—')+'</td>'+
@@ -256,7 +260,7 @@ function renderGrainList(){
   const rows = all.filter(b => {
     if (F.k !== 'all' && kindOf(b) !== F.k) return false;
     if (F.st !== 'all' && calc(b).status !== F.st) return false;
-    if (q && !((b.party||'').toLowerCase().includes(q) || (b.invNo||'').toLowerCase().includes(q) || String(b.bookNo||'').toLowerCase().includes(q) || (b.mobile||'').includes(q) || (b.location||'').toLowerCase().includes(q) || grainName(b.grain).toLowerCase().includes(q))) return false;
+    if (q && !((b.party||'').toLowerCase().includes(q) || (b.invNo||'').toLowerCase().includes(q) || String(b.bookNo||'').toLowerCase().includes(q) || (b.mobile||'').includes(q) || (b.location||'').toLowerCase().includes(q) || billGrain(b).toLowerCase().includes(q) || grainName(b.grain).toLowerCase().includes(q))) return false;
     return true;
   });
   const kinds = [['all','All'],['gsale','Sales'],['gpurchase','Purchases']].map(k =>
@@ -264,7 +268,7 @@ function renderGrainList(){
   const chips = ['all','overdue','unpaid','partial','paid','draft'].map(k =>
     '<button type="button" class="chip" data-st="'+k+'" aria-pressed="'+(F.st===k)+'">'+(k==='all'?'Any status':STATUS_LABEL[k])+'</button>').join('');
   $('#view').innerHTML =
-  '<div class="head"><div><h1>Grains</h1><p class="sub">Wheat, tewda, chana, soybean and dhan (purchase only). Sales go to the grain sale statement and purchases to the grain purchase statement, with a tab for each grain.</p></div>'+
+  '<div class="head"><div><h1>Grains</h1><p class="sub">Wheat, tewda, chana, soybean, dhan (purchase only) and other grains. Sales go to the grain sale statement and purchases to the grain purchase statement, with a tab for each grain.</p></div>'+
   '<div class="acts">'+(S.downloads ? '<button class="btn" type="button" id="gxS">Download grain sale statement</button><button class="btn" type="button" id="gxP">Download grain purchase statement</button><button class="btn link" type="button" id="gxM">Download master statement</button>' : '')+
   '<button class="btn primary" type="button" id="newGrain"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>New bill</button></div></div>'+
   '<div class="filters"><label for="q" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)">Search grain entries</label>'+
@@ -317,12 +321,12 @@ function askDeleteBill(id){
   const b = S.bills.get(id), c = calc(b), P = kindOf(b) === 'gpurchase';
   const what = P ? 'purchase slip '+b.invNo : kindOf(b) === 'gsale' ? 'grain sale '+b.invNo : 'bill no. '+b.invNo;
   const pays = (b.payments||[]).length;
-  const isLast = nextInvNo(kindOf(b)) === NO_PREFIX[kindOf(b)] + pad(noSeq(b.invNo) + 1);
+  const after = nextInvNo(kindOf(b), b.id), isLast = noSeq(after) <= noSeq(b.invNo);
   openDialog('<h2 id="dlgT">Delete '+esc(what)+'?</h2>'+
     '<p class="note" style="font-size:15px">'+esc(b.party)+' · ₹'+inr(c.final)+' · '+esc(dmy(b.date))+'</p>'+
     '<ul class="dellist"><li>The '+(P ? 'slip' : 'bill')+' and its PDF are removed, and it comes off the Excel statement and the party’s ledger.</li>'+
     (pays ? '<li>'+(pays === 1 ? 'Its payment' : 'Its '+pays+' payments')+' (₹'+inr(c.received)+') '+(pays === 1 ? 'is' : 'are')+' removed too.</li>' : '')+
-    '<li>'+(isLast ? 'The number '+esc(b.invNo)+' will be used again for the next one.' : 'The number '+esc(b.invNo)+' is left unused, so there will be a gap in the numbers.')+'</li>'+
+    '<li>'+(isLast ? (after === b.invNo ? 'The number '+esc(b.invNo)+' will be used again for the next one.' : 'The next new one will be numbered '+esc(after)+'.') : 'The number '+esc(b.invNo)+' is left unused, so there will be a gap in the numbers.')+'</li>'+
     '<li>A copy of all bills is saved in the Backups folder first, in case you need it back.</li></ul>'+
     '<div class="btns"><button class="btn" type="button" id="dCancel">Keep it</button><button class="btn danger" type="button" id="dOk">Delete '+(P ? 'slip' : 'bill')+'</button></div>');
   $('#dCancel').onclick = closeDialog;
@@ -330,8 +334,9 @@ function askDeleteBill(id){
     const btn = $('#dOk'); btn.disabled = true;
     try { if (FS.dir) await dailyBackup(payload(), true); }
     catch(e){ btn.disabled = false; toast('Couldn’t save a backup copy, so nothing was deleted. Try again.'); return; }
+    const pdfName = invoiceFile(b);   // worked out before the bill goes: a shared number's " (2)" depends on the other bills
     try { await deleteBill(id); } catch(e){ btn.disabled = false; return; }
-    try { const d = await FS.dir.getDirectoryHandle(INVOICE_DIR); await d.removeEntry(invoiceFile(b)); } catch(e){}
+    try { const d = await FS.dir.getDirectoryHandle(INVOICE_DIR); await d.removeEntry(pdfName); } catch(e){}
     closeDialog(); toast(what.charAt(0).toUpperCase()+what.slice(1)+' deleted'); go(listOf(b));
   };
 }
@@ -368,6 +373,7 @@ function askDelete(id){
 /* ================= FORM ================= */
 const SECTIONS = [
   {id:'party', title:'1. Customer', fields:[
+    {k:'invNo', label:'Bill no.', invno:true},
     {k:'date', label:'Bill date', type:'date', req:true},
     {k:'mobile', label:'Mobile no.', type:'mobile', ph:'10 digits', hint:'Customers you’ve billed before fill in by themselves.'},
     {k:'party', label:'Customer name and address', req:true, wide:true, ph:'e.g. Shri Balaji Laghu Udyog, Bhopal'},
@@ -396,6 +402,7 @@ const SECTIONS = [
 /* a grain purchase: the seller, the weighment, and what we pay them */
 const P_SECTIONS = [
   {id:'party', title:'1. Seller', fields:[
+    {k:'invNo', label:'Slip no.', invno:true},
     {k:'date', label:'Purchase date', type:'date', req:true},
     {k:'mobile', label:'Mobile no.', type:'mobile', ph:'10 digits', hint:'Parties you’ve dealt with before fill in by themselves.'},
     {k:'party', label:'Seller name and address', req:true, wide:true, ph:'e.g. Ramesh Patel, Berasia'},
@@ -409,8 +416,9 @@ const P_SECTIONS = [
     {k:'driverName', label:'Driver name'}, {k:'driverNo', label:'Driver no.', type:'tel'},
     {k:'gatePass', label:'Gate pass no.'}, {k:'saudaNo', label:'Sauda no.'}, {k:'saudaAgent', label:'Sauda agent'}]}
 ];
+const GRAIN_NAME_FIELD = {k:'grainOther', label:'Name of the grain', req:true, ph:'e.g. Masoor, Moong, Makka', hint:'Printed on the bill and kept on the Other grains tab of the statement.'};
 function weighFields(f){
-  return (f.grain === 'wheat' ? [{k:'wtype', label:'Type of wheat', type:'select', req:true, options:[['','Select']].concat(BUY_TYPES.map(t => [t, t]))}] : [])
+  return (f.grain === 'other' ? [GRAIN_NAME_FIELD] : []).concat(f.grain === 'wheat' ? [{k:'wtype', label:'Type of wheat', type:'select', req:true, options:[['','Select']].concat(BUY_TYPES.map(t => [t, t]))}] : [])
     .concat(f.grain === 'wheat' && f.wtype === OTHERS ? [{k:'wtypeOther', label:'Name of the wheat type', req:true, ph:'Type the quality name'}] : []).concat([
     {k:'vehicle', label:'Vehicle', type:'select', req:true, options:[['','Select']].concat(VEHICLES.concat(f.vehicle && !VEHICLES.includes(f.vehicle) ? [f.vehicle] : []).map(v => [v, v])),
       hint:'Dharam kata: Truck ₹100, others ₹60. '+(GRAINS[f.grain] && GRAINS[f.grain].labour ? 'Labour for '+grainName(f.grain).toLowerCase()+': ₹'+GRAINS[f.grain].labour+' per qtl.' : 'Labour: Hydraulic trolley ₹7.5 per qtl, others ₹10.5 per qtl.')},
@@ -428,7 +436,7 @@ function weighFields(f){
 function sectionsFor(f){
   const k = kindOf(f);
   if (k === 'gpurchase') return P_SECTIONS.map(s => s.weigh ? Object.assign({}, s, {fields:weighFields(f), note:cutLabel(f.grain)+' per quintal, dharam kata and labour are taken off for you.'}) : s);
-  if (k === 'gsale') return SECTIONS.map(s => s.id === 'transport' ? s : s.id === 'goods' ? Object.assign({}, s, {title:'2. Grain'}) : s);
+  if (k === 'gsale') return SECTIONS.map(s => s.id === 'transport' ? s : s.id === 'goods' ? Object.assign({}, s, {title:'2. Grain', pre:f.grain === 'other' ? [GRAIN_NAME_FIELD] : []}) : s);
   return SECTIONS;
 }
 
@@ -508,6 +516,7 @@ function leaveForm(next){
 }
 function cleanForSave(f){
   const b = JSON.parse(JSON.stringify(f));
+  if (b.grain === 'other') b.grainOther = typedGrain(b); else delete b.grainOther;
   ['desc','hsn','bags','size','bagKg','taxOn','paidNow'].concat(kindOf(f) === 'gpurchase' ? [] : ['rate']).forEach(k => delete b[k]);
   if (kindOf(f) === 'gpurchase'){ b.items = []; ['sgst','cgst','igst','freight','gst','gstMode','taxEdited','stationFrom','stationTo','truckNo','biltiNo','transporter','frieghtNote'].forEach(k => delete b[k]); }
   return b;
@@ -522,7 +531,14 @@ function applyAdvance(b, f){
 }
 
 function fieldHTML(fd){
-  const f = S.form, v = fd.val !== undefined ? fd.val : (f[fd.k] ?? '');
+  const f = S.form;
+  if (fd.invno){
+    // a new bill shows the next number; the office can type any other (it's kept as typed, duplicates too)
+    const fin = f.status !== 'draft';
+    fd = Object.assign({}, fd, {val:f.invNo || (fin ? '' : nextInvNo(kindOf(f))), req:fin, ph:nextInvNo(kindOf(f)),
+      hint:fin ? 'Change it only if the bill needs another number.' : 'The next number is filled in for you. Type another if the bill needs it.'});
+  }
+  const v = fd.val !== undefined ? fd.val : (f[fd.k] ?? '');
   const lab = '<label for="f-'+fd.k+'">'+esc(fd.label)+(fd.req?' <span class="req" aria-hidden="true">*</span>':'')+'</label>';
   let ctl;
   if (fd.auto) return '<div class="field'+(fd.wide?' wide':'')+'"><span class="flabel" id="l-'+fd.k+'">'+esc(fd.label)+' <span class="autotag">Worked out for you</span></span>'+
@@ -542,10 +558,13 @@ function fieldHTML(fd){
 }
 /* separate number series: 01, 02… for aata; GS-01… grain sales; GP-01… grain purchases */
 const NO_PREFIX = {aata:'', gsale:'GS-', gpurchase:'GP-'};
-const noSeq = (no) => parseInt(String(no||'').replace(/\D/g,''), 10) || 0;
-function nextInvNo(kind){
+/* the office can type any number (it must match the GST books); duplicates are accepted as typed.
+   A number's sequence is its last group of digits ("05", "GS-05", "2026-27/05" are all 5), and a new bill
+   continues from the highest one. */
+const noSeq = (no) => { const m = String(no||'').match(/(\d+)\D*$/); return m ? parseInt(m[1], 10) || 0 : 0; };
+function nextInvNo(kind, exceptId){
   kind = kind || 'aata'; let max = 0;
-  S.bills.forEach(b => { if (b.status!=='draft' && kindOf(b) === kind) max = Math.max(max, noSeq(b.invNo)); });
+  S.bills.forEach(b => { if (b.status!=='draft' && kindOf(b) === kind && b.id !== exceptId) max = Math.max(max, noSeq(b.invNo)); });
   return NO_PREFIX[kind] + pad(max+1);
 }
 function grainItemsHTML(){
@@ -555,7 +574,7 @@ function grainItemsHTML(){
     const F = (fd) => fieldHTML(Object.assign({}, fd, {val: fd.auto ? undefined : (it[fd.n] ?? '')}));
     const bagged = wheat && !looseWheat(it);
     return '<div class="itemcard" data-i="'+i+'">'+
-      '<div class="itemhead"><b>'+(many ? 'Item '+(i+1) : 'Item')+' · '+esc(grainName(f.grain))+' <span class="deva">'+esc(GRAINS[f.grain] ? GRAINS[f.grain].hi : '')+'</span></b>'+(many ? '<button class="btn link" type="button" data-remove="'+i+'">Remove item</button>' : '')+'</div>'+
+      '<div class="itemhead"><b>'+(many ? 'Item '+(i+1) : 'Item')+' · '+esc(grainName(f.grain))+' <span class="deva">'+esc(GRAINS[f.grain] && f.grain !== 'other' ? GRAINS[f.grain].hi : '')+'</span></b>'+(many ? '<button class="btn link" type="button" data-remove="'+i+'">Remove item</button>' : '')+'</div>'+
       '<div class="grid">'+
         (wheat ? F({k:k('type'), n:'type', label:'Type of wheat', type:'select', req:true, options:[['','Select']].concat(SELL_TYPES.map(t => [t, t]))}) : '')+
         (wheat && it.type === OTHERS ? F({k:k('typeOther'), n:'typeOther', label:'Name of the wheat type (optional)', ph:'Type the quality name', hint:'Sold loose like the other grains: enter the quantity in quintal.'}) : '')+
@@ -750,6 +769,7 @@ function renderForm(){
     }
     if (s.items){
       return '<section class="sec" aria-labelledby="s-'+s.id+'"><div class="sechead"><h2 id="s-'+s.id+'">'+s.title+'</h2></div>'+
+        ((s.pre||[]).length ? '<div class="grid">'+s.pre.map(fieldHTML).join('')+'</div>' : '')+
         '<div id="itemsBox" class="items">'+itemsHTML()+'</div>'+
         (fields.length ? '<div class="grid discrow">'+fields.map(fieldHTML).join('')+'</div>' : '')+'</section>';
     }
@@ -763,7 +783,7 @@ function renderForm(){
         '<div class="partylay"><div class="grid">'+fields.map(fieldHTML).join('')+'</div><aside class="partypick" id="partyPick" aria-label="Saved parties" aria-live="polite"></aside></div></section>';
     return '<section class="sec" aria-labelledby="s-'+s.id+'"><div class="sechead"><h2 id="s-'+s.id+'">'+s.title+'</h2></div>'+(s.note?'<p class="secnote">'+s.note+'</p>':'')+'<div class="grid">'+fields.map(fieldHTML).join('')+'</div></section>';
   }).join('');
-  const billNo = f.invNo || nextInvNo(kind);
+  const billNo = String(f.invNo||'').trim() || nextInvNo(kind);
   const what = kind === 'gsale' ? 'grain sale' : kind === 'gpurchase' ? 'grain purchase' : 'bill';
   const stmt = kind === 'aata' ? 'the Aata sale statement' : 'the '+grainName(f.grain)+' tab of the grain '+(kind === 'gsale' ? 'sale' : 'purchase')+' statement';
   const grainBar = kind === 'aata' ? '' :
@@ -771,7 +791,7 @@ function renderForm(){
     (isFinal ? '' : '<button class="btn link" type="button" id="chgGrain">Change</button>')+'</div>';
   $('#view').innerHTML =
     '<div class="head"><div><button class="btn link" type="button" id="back" style="margin-left:-4px">'+(kind === 'aata' ? '← Back to bills' : '← Back to grains')+'</button>'+
-    '<h1>'+(isFinal ? 'Edit '+what+' no. '+esc(f.invNo) : 'New '+what+' · No. '+esc(billNo))+'</h1>'+
+    '<h1>'+(isFinal ? 'Edit '+what+' no. ' : 'New '+what+' · No. ')+'<span id="hNo">'+esc(isFinal ? f.invNo : billNo)+'</span></h1>'+
     '<p class="sub">'+(isFinal ? 'Saving updates the '+(kind === 'gpurchase' ? 'slip' : 'bill')+' and '+stmt+'.' : 'Fields marked <span class="req">*</span> are needed. Your entry is kept as a draft if you leave.')+'</p>'+grainBar+'</div></div>'+
     '<form class="formcol" id="billForm" novalidate>'+secs+'</form>';
   $('#footerSlot').innerHTML = '<div class="footer"><div class="wrap"><div class="total">'+(kind === 'gpurchase' ? 'Payable to seller' : 'Bill total')+' <b class="num" id="finalOut">₹0</b> <span class="balout num" id="balOut" hidden></span></div><div class="btns">'+
@@ -781,7 +801,7 @@ function renderForm(){
   // wire
   $('#back').onclick = () => leaveForm(() => go(listOf(f)));
   if ($('#chgGrain')) $('#chgGrain').onclick = () => openGrainChooser({grain:f.grain, kind}, changeGrain);
-  SECS.forEach(s => s.fields.forEach(fd => {
+  SECS.forEach(s => (s.pre||[]).concat(s.fields).forEach(fd => {
     if (fd.auto || fd.readonly) return;
     if (fd.type === 'date'){
       wireDate('f-'+fd.k, (iso) => { f[fd.k] = iso || ''; S.formDirty = true; if (S.errors[fd.k] && iso){ delete S.errors[fd.k]; showErr(fd.k, ''); } },
@@ -795,6 +815,7 @@ function renderForm(){
       f[fd.k] = el.value; S.formDirty = true;
       if (fd.type === 'mobile'){ if (S.matchDismissed && S.matchDismissed !== el.value) S.matchDismissed = ''; mobileStatus(); }
       if (fd.k==='sgst' || fd.k==='cgst' || fd.k==='igst'){ f.taxEdited = Object.assign({}, f.taxEdited, {[fd.k]: true}); }
+      if (fd.k === 'invNo'){ const h = $('#hNo'); if (h) h.textContent = el.value.trim() || (isFinal ? '' : nextInvNo(kind)); }
       if (fd.k === 'wtype'){ const y = window.scrollY; renderForm(); window.scrollTo(0, y); const nx = $(f.wtype === OTHERS ? '#f-wtypeOther' : '#f-wtype'); if (nx) nx.focus(); return; }
       if (S.errors[fd.k]){ delete S.errors[fd.k]; showErr(fd.k, ''); }
       if (fd.k === 'party' || fd.k === 'mobile') renderPartyPick();
@@ -962,10 +983,12 @@ function showErr(k, msg){
 function validate(){
   const f = S.form, errs = {};
   if (!f.date) errs.date = 'Enter the bill date as DD/MM/YYYY.';
+  if (f.status !== 'draft' && !String(f.invNo||'').trim()) errs.invNo = 'Enter the '+(kindOf(f) === 'gpurchase' ? 'slip' : 'bill')+' number.';
   if (f.mobile && !/^\d{10}$/.test(f.mobile)) errs.mobile = 'Mobile number must be 10 digits. You typed '+f.mobile.length+'.';
   const kind = kindOf(f);
   if (!f.party.trim()) errs.party = kind === 'gpurchase' ? 'Enter the seller’s name and address.' : 'Enter the customer’s name and address.';
   if (kind === 'gpurchase'){
+    if (f.grain === 'other' && !typedGrain(f)) errs.grainOther = 'Type the name of the grain.';
     if (f.grain === 'wheat' && !f.wtype) errs.wtype = 'Choose the type of wheat.';
     if (f.grain === 'wheat' && f.wtype === OTHERS && !String(f.wtypeOther||'').trim()) errs.wtypeOther = 'Type the name of the wheat type.';
     if (!f.vehicle) errs.vehicle = 'Choose the vehicle, so the dharam kata charge is right.';
@@ -973,6 +996,7 @@ function validate(){
     if (!(num(f.rate) > 0)) errs.rate = 'Enter the rate per quintal.';
   } else f.items.forEach((it, i) => {
     if (kind === 'gsale'){
+      if (i === 0 && f.grain === 'other' && !typedGrain(f)) errs.grainOther = 'Type the name of the grain.';
       if (f.grain === 'wheat' && !it.type) errs['i'+i+'-type'] = 'Choose the type of wheat.';
       if (f.grain === 'wheat' && !looseWheat(it) && it.brand === OTHERS && !String(it.brandOther||'').trim()) errs['i'+i+'-brandOther'] = 'Type the brand name.';
       if (f.grain === 'wheat' && !looseWheat(it)){
@@ -1014,11 +1038,14 @@ async function submitForm(kind){
     const pick = await askPartyClash(f, clash);
     if (pick !== 'go'){ const n = $('#f-party'); if (n){ n.focus(); n.scrollIntoView({block:'center'}); } return; }
   }
-  const b = cleanForSave(f);
+  const b = cleanForSave(f), was = S.bills.get(b.id), oldPdf = was && was.status !== 'draft' ? invoiceFile(was) : null;
+  b.invNo = String(b.invNo||'').trim();
   if (kind === 'generate'){ b.status = 'final'; b.invNo = b.invNo || nextInvNo(kindOf(b));
     b.createdAt = new Date().toISOString(); }
   applyAdvance(b, f);
   try { await saveBill(b); } catch(e){ return; }
+  // number changed on a finished bill: the PDF under the old number goes, the new one is saved below
+  if (oldPdf && oldPdf !== invoiceFile(b) && FS.dir) FS.dir.getDirectoryHandle(INVOICE_DIR).then(d => d.removeEntry(oldPdf)).catch(() => {});
   saveInvoicePdf(b).catch(() => {});
   S.formDirty = false; S.justMade = kind === 'generate';
   if (kind === 'final') toast('Bill '+b.invNo+' saved');
@@ -1043,13 +1070,13 @@ function invoiceHTML(b){
     ncol = 5;
     cols = [22, 0, 70, 70, 122];
     head = '<th>No.</th><th>Particulars</th><th class="nb">Quantity<br>(qtl)</th><th>Rate</th><th>Amount</th>';
-    const desc = grainDesc(b.grain, buyType(b)) || grainName(b.grain);
+    const desc = grainDesc(b.grain, buyType(b), '', typedGrain(b)) || billGrain(b);
     body = (c.gross ? '<tr class="item"><td class="c">1</td><td>'+esc(desc)+' <span class="sm">Gross weight</span></td><td class="c">'+qtlFmt(c.gross)+'</td><td></td><td></td></tr>'+
       '<tr class="item"><td></td><td><span class="sm">Less '+cutLabel(b.grain)+' per qtl</span></td><td class="c">− '+qtlFmt(c.deduction)+'</td><td></td><td></td></tr>'+
       '<tr class="item"><td></td><td><span class="sm">Net weight</span></td><td class="c">'+qtlFmt(c.net)+'</td><td class="rt">'+(c.rate?m2(c.rate):'')+'</td><td class="rt">'+(c.amount?m2(c.amount):'')+'</td></tr>' : '');
     nRows = c.gross ? 3 : 0;
     taxes = (c.discount ? [['Discount', '− '+m2(c.discount)]] : []).concat([['Dharam kata', c.dk ? '− '+m2(c.dk) : ''], ['Labour'+(c.labourQtl ? '<br><span class="am">'+c.labourQtl+' qtl @ '+c.labourRate+'</span>' : ''), c.labour ? '− '+m2(c.labour) : '']]);
-    tot = '<tr class="tot"><td></td><td style="font-family:var(--font-paper);font-weight:400;font-size:13px;text-align:right">Net payable</td><td>'+(c.net?qtlFmt(c.net):'')+'</td><td style="font-family:var(--font-paper);color:var(--ink)">Total</td><td class="rt">'+(c.final?m2(c.final)+'/-':'')+'</td></tr>';
+    tot = '<tr class="tot"><td></td><td class="tl" style="font-weight:400;font-size:13px;text-align:right">Net payable</td><td>'+(c.net?qtlFmt(c.net):'')+'</td><td class="tl">Total</td><td class="rt">'+(c.final?m2(c.final)+'/-':'')+'</td></tr>';
     foot = [
       ['Vehicle :', vehicleOf(b)], ['Gross Wt. :', c.gross ? qtlFmt(c.gross)+' qtl' : ''], ['Driver Name :', b.driverName],
       ['Vehicle No. :', b.vehicleNo], ['Net Wt. :', c.net ? qtlFmt(c.net)+' qtl' : ''], ['Driver No. :', b.driverNo],
@@ -1061,14 +1088,14 @@ function invoiceHTML(b){
     head = '<th>No.</th><th>Description of Goods</th><th class="hsn">HSN<br>code</th><th class="nb">Quantity<br>(qtl)</th><th>Rate</th><th>Amount</th>';
     const rows = c.items.filter(it => it.qty || it.rate);
     // long descriptions wrap: allow ~24 characters a line, 22px per extra line
-    const descs = rows.map(it => grainDesc(b.grain, itemType(it), itemBrand(it, b.grain)));
+    const descs = rows.map(it => grainDesc(b.grain, itemType(it), itemBrand(it, b.grain), typedGrain(b)));
     extraH = descs.reduce((t, d) => t + Math.max(0, Math.ceil(d.length / 24) - 1) * 22, 0);
     const small = extraH > 120;   // many long lines: a smaller size keeps the page on one slip
     if (small) extraH = descs.reduce((t, d) => t + Math.max(0, Math.ceil(d.length / 30) - 1) * 19, 0);
     body = rows.map((it, i) => '<tr class="item"><td class="c">'+(i+1)+'</td><td'+(small ? ' style="font-size:14px;line-height:1.2"' : '')+'>'+esc(descs[i])+'</td><td class="c">'+esc(it.hsn)+'</td><td class="c">'+(it.qtl?qtlFmt(it.qtl):'')+'</td><td class="rt">'+(it.rate?m2(it.rate):'')+'</td><td class="rt">'+(it.amount?m2(it.amount):'')+'</td></tr>').join('');
     nRows = rows.length;
     taxes = (c.discount ? [['Less discount', '− '+m2(c.discount)]] : []).concat([['+SGST',tx(c.sgst)],['+CGST',tx(c.cgst)],['+IGST',tx(c.igst)],['add frieght',tx(c.freight)]]);
-    tot = '<tr class="tot"><td></td><td></td><td></td><td>'+(c.qtl?qtlFmt(c.qtl):'')+'</td><td style="font-family:var(--font-paper);color:var(--ink)">Total</td><td class="rt">'+(c.final?m2(c.final)+'/-':'')+'</td></tr>';
+    tot = '<tr class="tot"><td></td><td></td><td></td><td>'+(c.qtl?qtlFmt(c.qtl):'')+'</td><td class="tl">Total</td><td class="rt">'+(c.final?m2(c.final)+'/-':'')+'</td></tr>';
   } else {
     ncol = 8;
     cols = [22, 0, 40, 46, 52, 62, 58, 122];
@@ -1080,7 +1107,7 @@ function invoiceHTML(b){
     body = rows.map((it, i) => '<tr class="item"><td class="c">'+(i+1)+'</td><td'+(wheat ? ' class="wdesc"' : '')+'>'+esc(desc(it))+'</td><td class="c">'+esc(it.hsn)+'</td><td class="c">'+(it.bags?inr(it.bags):'')+'</td><td class="c">'+(it.size === 'LD' ? 'LD' : it.kg ? inr(it.kg)+' kg' : '')+'</td><td class="c">'+(it.qtl?qtlFmt(it.qtl):'')+'</td><td class="rt">'+(it.rate?m2(it.rate):'')+'</td><td class="rt">'+(it.amount?m2(it.amount):'')+'</td></tr>').join('');
     nRows = rows.length;
     taxes = (c.discount ? [['Less discount', '− '+m2(c.discount)]] : []).concat([['+SGST',tx(c.sgst)],['+CGST',tx(c.cgst)],['+IGST',tx(c.igst)],['add frieght',tx(c.freight)]]);
-    tot = '<tr class="tot"><td></td><td></td><td></td><td>'+(has?inr(c.bags):'')+'</td><td class="deva" style="font-size:10px">'+(has?'बोरी':'')+'</td><td>'+(has?qtlFmt(c.qtl):'')+'</td><td style="font-family:var(--font-paper);color:var(--ink)">Total</td><td class="rt">'+(c.final?m2(c.final)+'/-':'')+'</td></tr>';
+    tot = '<tr class="tot"><td></td><td></td><td></td><td>'+(has?inr(c.bags):'')+'</td><td class="deva" style="font-size:10px">'+(has?'बोरी':'')+'</td><td>'+(has?qtlFmt(c.qtl):'')+'</td><td class="tl">Total</td><td class="rt">'+(c.final?m2(c.final)+'/-':'')+'</td></tr>';
   }
   if (!foot) foot = [
     ['Station From :', b.stationFrom], ['Truck No. :', b.truckNo], ['Driver Name :', b.driverName],
@@ -1120,8 +1147,22 @@ function invoiceHTML(b){
   '</div>';
 }
 /* the blank space in the table is sized by estimate; after drawing, take any overflow out of it so the address band stays on the slip */
+/* numbers in the goods table print as big as their column allows: each starts at the large size in styles.css and
+   steps down only when it would not fit (a long amount, a 4-digit bag count). Labels keep their size. */
+const NUM_CELLS = 'tr.item td.c, tr.item td.rt, tr.tax td.ul div, tr.tot td:not(.tl):not(.deva), tr.adv td.rt';
+function fitNumbers(inv){
+  inv.querySelectorAll(NUM_CELLS).forEach(el => {
+    el.style.fontSize = '';
+    if (!el.textContent.trim()) return;
+    const cs = getComputedStyle(el), room = el.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+    const r = document.createRange(); r.selectNodeContents(el);
+    let size = parseFloat(cs.fontSize);
+    for (let n = 0; n < 30 && r.getBoundingClientRect().width > room - 1 && size > 10; n++){ size -= 0.5; el.style.fontSize = size+'px'; }
+  });
+}
 function fitInvoice(inv){
   if (!inv) return;
+  fitNumbers(inv);
   const fill = inv.querySelector('tr.fill td'), addr = inv.querySelector('.addr'); if (!fill || !addr) return;
   const over = addr.getBoundingClientRect().bottom + 22 - inv.getBoundingClientRect().bottom;
   if (over > 0.5) fill.style.height = Math.max(10, fill.getBoundingClientRect().height - over - 1) + 'px';
@@ -1136,7 +1177,7 @@ function renderBill(){
   const doc = P ? 'slip' : 'bill';
   $('#view').innerHTML =
     '<div class="head"><div><button class="btn link" type="button" id="back" style="margin-left:-4px">'+(kind === 'aata' ? '← Back to bills' : '← Back to grains')+'</button>'+
-    '<h1>'+title+esc(b.invNo)+'</h1><p class="sub">'+(kind === 'aata' ? '' : esc(grainName(b.grain))+' · ')+esc(b.party)+' · '+esc(dmy(b.date))+'</p></div>'+pill(c.status)+'</div>'+
+    '<h1>'+title+esc(b.invNo)+'</h1><p class="sub">'+(kind === 'aata' ? '' : esc(billGrain(b))+' · ')+esc(b.party)+' · '+esc(dmy(b.date))+'</p></div>'+pill(c.status)+'</div>'+
     (S.justMade ? '<div class="banner" role="status"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"/></svg><b>'+(P ? 'Purchase slip created' : 'Bill created')+'</b><span>and added to '+stmt+'.</span></div>' : '')+
     '<div class="billview"><div class="paperbox">'+invoiceHTML(b)+'</div>'+
     '<aside>'+
@@ -1154,6 +1195,7 @@ function renderBill(){
       '<button class="btn link danger" type="button" id="delBill">Delete this '+doc+'</button>'+
     '</aside></div>';
   fitInvoice($('.paperbox .inv'));
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { const inv = $('.paperbox .inv'); if (inv) fitInvoice(inv); });
   $('#back').onclick = () => go(listOf(b));
   if ($('#pdf')) $('#pdf').onclick = (e) => downloadPDF(b, e.currentTarget);
   if ($('#pay')) $('#pay').onclick = () => openPay(b.id);
@@ -1242,7 +1284,7 @@ function gsaleRows(grain){
   return sheetBills('gsale', grain).map(b => {
     const c = calc(b);
     const its = c.items.filter(it => it.qty || it.bags || it.rate); if (!its.length) its.push(c.items[0] || {});
-    return {bill:Object.assign({'DATE':dmy(b.date), 'NAME OF CUSTOMER WITH ADDRESS':b.party||'', 'LOCATION':b.location||'', 'MOBILE NO.':b.mobile||'', 'GRAIN':grainName(b.grain)}, saleCommon(b, c)),
+    return {bill:Object.assign({'DATE':dmy(b.date), 'NAME OF CUSTOMER WITH ADDRESS':b.party||'', 'LOCATION':b.location||'', 'MOBILE NO.':b.mobile||'', 'GRAIN':billGrain(b)}, saleCommon(b, c)),
       items:its.map(it => ({'TYPE':b.grain === 'wheat' ? itemType(it) : '', 'BRAND':itemBrand(it, b.grain), 'NO. OF BAGS':it.bags || '', 'BAG SIZE':it.bags ? (it.size === 'other' ? 'Other' : '30 kg') : '', 'WEIGHT OF ONE BAG (kg)':it.bags ? it.kg : '', 'QUANTITY (Quintal)':it.qtl ?? '', 'RATE (₹)':it.rate ?? '', 'AMOUNT (₹)':it.amount ?? ''}))};
   });
 }
@@ -1254,7 +1296,7 @@ function gpurchaseRows(grain){
   return sheetBills('gpurchase', grain).map(b => {
     const c = calc(b);
     return {items:[], bill:{'DATE':dmy(b.date), 'BILL NO.':b.invNo||'', 'BOOK NO.':b.bookNo||'', 'SELLER NAME WITH ADDRESS':b.party||'', 'LOCATION':b.location||'', 'MOBILE NO.':b.mobile||'',
-      'GRAIN':grainName(b.grain), 'TYPE':buyType(b), 'VEHICLE TYPE':vehicleOf(b), 'VEHICLE NO.':b.vehicleNo||'',
+      'GRAIN':billGrain(b), 'TYPE':buyType(b), 'VEHICLE TYPE':vehicleOf(b), 'VEHICLE NO.':b.vehicleNo||'',
       'GROSS WEIGHT (Quintal)':c.gross, 'DEDUCTION RATE (kg/qtl)':c.cutKg, 'DEDUCTION (Quintal)':c.deduction, 'NET WEIGHT (Quintal)':c.net, 'RATE (₹)':c.rate, 'AMOUNT (₹)':c.amount,
       'DISCOUNT (₹)':c.discount || '', 'DHARAM KATA (₹)':c.dk, 'LABOUR RATE (₹/qtl)':c.labourRate, 'LABOUR (₹)':c.labour, 'FINAL AMOUNT (₹)':c.final,
       'DUE DATE':dmy(b.dueDate), 'AMOUNT PAID (₹)':c.received, 'DATE PAID':lastPayDate(b), 'BALANCE (₹)':Math.max(0, c.balance), 'PAYMENT STATUS':STATUS_LABEL[c.status], 'PAYMENT MODE':payModes(b),
@@ -1289,7 +1331,7 @@ const STATEMENTS = {
 };
 function buildSheet(tab){
   const def = SHEET_DEFS[tab.kind];
-  const drop = new Set(tab.grain ? ['GRAIN'].concat(tab.grain === 'wheat' ? [] : def.wheatOnly || []) : []);
+  const drop = new Set(tab.grain ? (tab.grain === 'other' ? [] : ['GRAIN']).concat(tab.grain === 'wheat' ? [] : def.wheatOnly || []) : []);
   const groups = def.groups.map(g => g.filter(n => !drop.has(n)));
   const title = def.title || HEAD+(grainName(tab.grain)+(tab.kind === 'gsale' ? ' SALE' : ' PURCHASE')).toUpperCase()+' STATEMENT';
   const all = [].concat(...groups);
@@ -1444,7 +1486,18 @@ async function singlePdf(b){
   return pdf.output('blob');
 }
 const INVOICE_DIR = 'Invoices';
-const docStem = (b) => (kindOf(b) === 'gpurchase' ? 'PurchaseSlip_' : 'Invoice_')+(b.invNo||'draft');
+/* file name for a bill's PDF. A typed number may hold characters Windows can't use in a name (12/2026), and two bills
+   may share a number; the second one's file gets " (2)" so neither PDF overwrites the other. */
+const safeNo = (no) => String(no||'').trim().replace(/[\\/:*?"<>|]+/g, '-').replace(/[. ]+$/, '') || 'draft';
+function docStem(b){
+  const pdfKind = (x) => kindOf(x) === 'gpurchase', base = (pdfKind(b) ? 'PurchaseSlip_' : 'Invoice_')+safeNo(b.invNo);
+  if (b.status === 'draft') return base;
+  const key = (x) => pdfKind(x)+'|'+safeNo(x.invNo).toLowerCase();
+  const same = [...S.bills.values()].filter(x => x.status !== 'draft' && x.id !== b.id && key(x) === key(b));
+  if (!same.length) return base;
+  const i = same.concat([b]).sort((x, y) => String(x.createdAt||'').localeCompare(String(y.createdAt||'')) || x.id.localeCompare(y.id)).findIndex(x => x.id === b.id);
+  return i ? base+' ('+(i+1)+')' : base;
+}
 const invoiceFile = (b) => docStem(b)+'.pdf';
 async function saveInvoicePdf(b){
   if (!FS.dir || !window.html2canvas || !window.jspdf || b.status === 'draft') return null;
@@ -1515,10 +1568,10 @@ function ledgerLines(c){
     const after = (p) => p.advance && p.date === b.date ? 1 + seq + 0.5e-7 : 2;
     if (kind === 'gpurchase'){
       // we owe the seller: the purchase is a credit, what we pay them is a debit
-      rows.push({date:b.date, ord:1 + seq, text:'Purchase '+b.invNo+' · '+grainName(b.grain)+(buyType(b) ? ' ('+buyType(b)+')' : '')+' · '+qtlFmt(k.net)+' qtl', cr:k.final, bill:b});
+      rows.push({date:b.date, ord:1 + seq, text:'Purchase '+b.invNo+' · '+billGrain(b)+(buyType(b) ? ' ('+buyType(b)+')' : '')+' · '+qtlFmt(k.net)+' qtl', cr:k.final, bill:b});
       (b.payments||[]).forEach(p => rows.push({date:p.date, ord:after(p), text:'Paid to them'+(p.mode ? ' · '+p.mode : '')+' · purchase '+b.invNo, dr:num(p.amount), payBill:b}));
     } else {
-      const what = kind === 'gsale' ? 'Sale '+b.invNo+' · '+grainName(b.grain)+' · '+qtlFmt(k.qtl)+' qtl' : 'Bill no. '+b.invNo+' · '+inr(k.bags)+' bags · '+qtlFmt(k.qtl)+' qtl';
+      const what = kind === 'gsale' ? 'Sale '+b.invNo+' · '+billGrain(b)+' · '+qtlFmt(k.qtl)+' qtl' : 'Bill no. '+b.invNo+' · '+inr(k.bags)+' bags · '+qtlFmt(k.qtl)+' qtl';
       rows.push({date:b.date, ord:1 + seq, text:what, dr:k.final, bill:b});
       (b.payments||[]).forEach(p => rows.push({date:p.date, ord:after(p), text:(p.advance ? 'Advance' : 'Payment')+(p.mode ? ' · '+p.mode : '')+' · '+(kind === 'gsale' ? 'sale '+b.invNo : 'bill no. '+b.invNo), cr:num(p.amount), payBill:b}));
     }
@@ -2127,7 +2180,7 @@ function reportContext(){
   if (b){
     const c = calc(b), kind = kindOf(b);
     ctx.bill = (kind === 'gpurchase' ? 'Purchase ' : kind === 'gsale' ? 'Grain sale ' : 'Aata bill ')+(b.invNo || '(draft)')+
-      (isGrain(b) ? ' · '+grainName(b.grain) : '')+' · '+(b.party || 'no name')+' · '+dmy(b.date)+' · ₹'+inr(c.final)+(S.view === 'form' ? ' · while filling the form' : '');
+      (isGrain(b) ? ' · '+billGrain(b) : '')+' · '+(b.party || 'no name')+' · '+dmy(b.date)+' · ₹'+inr(c.final)+(S.view === 'form' ? ' · while filling the form' : '');
   }
   return ctx;
 }

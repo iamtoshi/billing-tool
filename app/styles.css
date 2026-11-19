@@ -249,6 +249,13 @@ table.list.ledger{min-width:860px}
 .inv td.lbl .am{font-size:11px}
 .inv td.ul div{border-bottom:1px solid #000;min-height:20px;text-align:right;margin:0 3px}
 .inv .c{text-align:center}.inv .rt{text-align:right}
+/* numbers in the goods table: as big as the column allows (fitNumbers in app.js steps a long one down); labels unchanged */
+.inv tr.item td.c,.inv tr.item td.rt{font-size:22px;line-height:1.15;padding-top:5px}
+.inv tr.tax td.ul div{font-size:20px;line-height:1.1}
+.inv tr.tot td{font-size:23px}
+.inv tr.adv td.rt{font-size:21px}
+.inv tr.adv.bal td.rt{font-size:23px}
+.inv tr.tot td.tl{font-family:var(--font-paper);color:var(--ink);font-size:17px}
 .inv .deva{font-family:var(--font-deva)}
 .inv .foot{display:grid;grid-template-columns:1.3fr 1fr 1fr;column-gap:12px;row-gap:10px;padding:22px 12px 0;font-size:12.5px}
 .inv .foot div{display:flex;gap:4px;align-items:flex-end;min-height:26px;border-bottom:1px solid #000}

@@ -143,7 +143,8 @@ eq('IGST empty', await p.inputValue('#f-igst'), '');
 near('form total', money(await p.locator('#finalOut').innerText()), oA1.final);
 await p.fill('#f-advance', '50000'); await p.selectOption('#f-advMode', 'UPI');
 check('balance shown in footer', (await p.locator('#balOut').innerText()).includes(inr(r2(oA1.final - 50000))), await p.locator('#balOut').innerText());
-await p.locator('#f-dueDate').fill('15/11/2026'); await p.locator('#f-dueDate').blur();
+const dueSoon = (() => { const d = new Date(); d.setDate(d.getDate() + 30); return String(d.getDate()).padStart(2, '0') + '/' + String(d.getMonth() + 1).padStart(2, '0') + '/' + d.getFullYear(); })();   // always in the future, so bill 01 is never overdue
+await p.locator('#f-dueDate').fill(dueSoon); await p.locator('#f-dueDate').blur();
 await p.locator('summary', { hasText: '5. Transport details' }).click();
 await p.fill('#f-truckNo', 'MP04 GA 7788'); await p.fill('#f-driverName', 'Ramu'); await p.fill('#f-saudaAgent', 'Mahesh');
 await p.getByRole('button', { name: 'Create bill' }).click(); await H('Bill no. 01').waitFor();
@@ -451,9 +452,9 @@ await p.waitForTimeout(3000);
 let F = await readFolder();
 for (const n of ['Aata sale statement.xlsx', 'Grain sale statement.xlsx', 'Grain purchase statement.xlsx', 'Master statement.xlsx']) check('file ' + n, F.top.includes(n), F.top.join(', '));
 eq('aata tabs', Object.keys(F.x['Aata sale statement.xlsx']).join('|'), 'Aata sale');
-eq('grain sale tabs', Object.keys(F.x['Grain sale statement.xlsx']).join('|'), 'Wheat|Tewda|Chana|Soybean');
-eq('grain purchase tabs', Object.keys(F.x['Grain purchase statement.xlsx']).join('|'), 'Wheat|Tewda|Chana|Soybean|Dhan');
-eq('master tabs', Object.keys(F.x['Master statement.xlsx']).length, 10);
+eq('grain sale tabs', Object.keys(F.x['Grain sale statement.xlsx']).join('|'), 'Wheat|Tewda|Chana|Soybean|Other grains');
+eq('grain purchase tabs', Object.keys(F.x['Grain purchase statement.xlsx']).join('|'), 'Wheat|Tewda|Chana|Soybean|Dhan|Other grains');
+eq('master tabs', Object.keys(F.x['Master statement.xlsx']).length, 12);
 const aataRows = sheetRows(F.x['Aata sale statement.xlsx']['Aata sale']);
 const finals = aataRows.map(r => r['FINAL AMOUNT (₹)']).filter(v => v !== '');
 eq('aata statement has bills 01–03 (04 deleted)', aataRows.filter(r => r['INVOICE NO.']).map(r => r['INVOICE NO.']).join(','), '01,02,03');
@@ -720,6 +721,134 @@ await go('Aata'); await p.getByRole('button', { name: 'New bill' }).click();
 await party({ mobile: '9444444444', name: 'Gupta Kirana Store' });
 await p.getByRole('button', { name: /Save for later/ }).click(); await p.waitForTimeout(300);
 eq('draft saves without the check', await p.locator('.dialog').count(), 0);
+
+/* ================================================================ */
+sec('BIL-8 · bill no. can be typed (duplicates accepted, next continues from the highest) · Other grains · bigger numbers on the bill');
+const hNo = async () => (await p.locator('h1').innerText()).trim();
+const fileNow = async () => { await p.waitForTimeout(2500); return readFolder(); };
+await go('Aata'); await p.getByRole('button', { name: 'New bill' }).click();
+const n0 = await p.inputValue('#f-invNo');
+check('new bill: number box shows the next number', /^\d+$/.test(n0) && (await hNo()).endsWith('No. ' + n0), n0 + ' / ' + await hNo());
+await p.fill('#f-invNo', '500');
+check('heading follows the typed number', (await hNo()).endsWith('No. 500'), await hNo());
+await party({ name: 'Number Test One' }); await aataItem(0, { bags: 2, size: '30kg', rate: 3000 });
+await p.getByRole('button', { name: 'Create bill' }).click(); await H('Bill no. 500').waitFor();
+check('typed number printed on the bill', /Invoice No\. ?: ?500\b/.test(await txt('.paperbox .inv .partyblk')), await txt('.paperbox .inv .partyblk'));
+await go('Aata'); await p.getByRole('button', { name: 'New bill' }).click();
+eq('next new bill continues from the highest (500 → 501)', await p.inputValue('#f-invNo'), '501');
+await p.fill('#f-invNo', '500');   // the same number again: accepted, no warning
+await party({ name: 'Number Test Two' }); await aataItem(0, { bags: 3, size: '30kg', rate: 3000 });
+await p.getByRole('button', { name: 'Create bill' }).click(); await H('Bill no. 500').waitFor();
+eq('duplicate number accepted without a warning', await p.locator('.dialog').count(), 0);
+eq('two bills now carry 500', await p.evaluate(() => [...window.__deoratan.S.bills.values()].filter(b => b.invNo === '500' && b.status === 'final').length), 2);
+await go('Aata'); await p.getByRole('button', { name: 'New bill' }).click();
+eq('still 501 next', await p.inputValue('#f-invNo'), '501');
+await party({ name: 'Number Test Three' }); await aataItem(0, { bags: 1, size: '30kg', rate: 3000 });
+await p.getByRole('button', { name: 'Create bill' }).click(); await H('Bill no. 501').waitFor();
+check('untouched box gives the next number', true);
+// edit a finished bill's number
+await p.getByRole('button', { name: 'Edit bill' }).click();
+eq('edit form shows the bill number', await p.inputValue('#f-invNo'), '501');
+await p.fill('#f-invNo', '');
+await p.getByRole('button', { name: 'Save changes' }).click();
+check('a finished bill needs a number', (await visibleErrs()).some(e => e.includes('Enter the bill number')), (await visibleErrs()).join(' | '));
+await p.fill('#f-invNo', '2026-27/700');
+await p.getByRole('button', { name: 'Save changes' }).click(); await H('Bill no. 2026-27/700').waitFor();
+check('edited number printed', (await txt('.paperbox .inv .partyblk')).includes('2026-27/700'));
+await go('Aata'); await p.getByRole('button', { name: 'New bill' }).click();
+eq('after an edit the next continues from the highest (…/700 → 701)', await p.inputValue('#f-invNo'), '701');
+await p.getByRole('button', { name: '← Back to bills' }).click();
+let F8 = await fileNow();
+check('PDFs: 500, a second 500 that does not overwrite it, the new name for the edited bill, the old 501 removed',
+  ['Invoice_500.pdf', 'Invoice_500 (2).pdf', 'Invoice_2026-27-700.pdf'].every(n => F8.inv.includes(n)) && !F8.inv.includes('Invoice_501.pdf'), F8.inv.filter(n => /500|501|700/.test(n)).join(', '));
+check('Aata statement lists the typed numbers', ['500', '2026-27/700'].every(n => sheetRows(F8.x['Aata sale statement.xlsx']['Aata sale']).some(r => r['INVOICE NO.'] === n)));
+// grain numbers: typed too, and the series continues
+await go('Grains'); await newGrain('soybean', 'gpurchase');
+check('purchase slip number box shows GP-…', /^GP-\d+$/.test(await p.inputValue('#f-invNo')), await p.inputValue('#f-invNo'));
+await p.fill('#f-invNo', 'GP-50');
+await party({ name: 'Slip Number Seller' }); await p.selectOption('#f-vehicle', 'Truck'); await p.fill('#f-gross', '10'); await p.fill('#f-rate', '4000');
+await p.getByRole('button', { name: 'Create purchase slip' }).click(); await H('Purchase no. GP-50').waitFor();
+check('slip prints the typed number', /Slip No\. ?: ?GP-50\b/.test(await txt('.paperbox .inv .partyblk')));
+await p.getByRole('button', { name: '← Back to grains' }).click(); await newGrain('soybean', 'gpurchase');
+eq('next slip continues GP-51', await p.inputValue('#f-invNo'), 'GP-51');
+await p.getByRole('button', { name: '← Back to grains' }).click();
+
+// Other grains: the office types the name; sale by quintal; purchase like wheat (300 g, labour by vehicle)
+await p.getByRole('button', { name: 'New bill' }).click();
+check('chooser has Other grains', (await p.locator('[data-g="other"]').innerText()).includes('Other grains'));
+await p.locator('[data-g="other"]').click(); await p.locator('[data-k="gsale"]').click(); await p.locator('#gGo').click();
+await party({ name: 'Other Grain Buyer, Sehore' });
+await grainItem(0, 'other', { qty: 12.5, rate: 6000 });
+await p.getByRole('button', { name: 'Create bill' }).click();
+check('grain name is needed', (await visibleErrs()).some(e => e.includes('name of the grain')), (await visibleErrs()).join(' | '));
+await p.fill('#f-grainOther', 'Masoor');
+const oOG = saleBill({ items: [{ qty: 12.5, rate: 6000 }] });
+near('other grain form total', money(await p.locator('#finalOut').innerText()), oOG.final);
+await p.getByRole('button', { name: 'Create bill' }).click(); await p.waitForSelector('.paperbox .inv');
+let invOG = await invoiceTotals();
+check('bill line shows the typed name and the quantity', invOG.rows[0].includes('Masoor') && invOG.rows[0].includes('12.50'), invOG.rows[0]);
+near('other grain bill total', invOG.final, oOG.final);
+check('heading shows the typed name', (await txt('.head .sub')).includes('Masoor'));
+check('other grain sale fits', await fits());
+const ogBuys = [{ grain: 'other', name: 'Moong', vehicle: 'Tractor', gross: 20.55, rate: 7000 }, { grain: 'other', name: 'Makka', vehicle: 'Hydraulic trolley', gross: 33.5, rate: 2100, discount: 150 }];
+const oOGB = [];
+for (const bq of ogBuys) {
+  await p.getByRole('button', { name: '← Back to grains' }).click(); await newGrain('other', 'gpurchase');
+  await party({ name: 'Other Grain Seller' }); await p.fill('#f-grainOther', bq.name);
+  await p.selectOption('#f-vehicle', bq.vehicle); await p.fill('#f-gross', String(bq.gross)); await p.fill('#f-rate', String(bq.rate));
+  if (bq.discount) await p.fill('#f-discount', String(bq.discount));
+  const o = purchase(bq); oOGB.push(o);   // the oracle treats every grain but dhan like wheat: 300 g, labour by vehicle
+  near(bq.name + ' net (less 300 g/qtl)', money(await p.locator('#f-net').innerText()), o.net);
+  near(bq.name + ' labour (' + bq.vehicle + ')', money(await p.locator('#f-labour').innerText()), o.labour);
+  near(bq.name + ' payable', money(await p.locator('#f-pfinal').innerText()), o.final);
+  await p.getByRole('button', { name: 'Create purchase slip' }).click(); await p.waitForSelector('.paperbox .inv');
+  const slip = await txt('.paperbox .inv tbody');
+  check(bq.name + ' slip shows the name and labour ' + o.lq + ' qtl @ ' + o.lr, slip.includes(bq.name) && slip.includes('Labour ' + o.lq + ' qtl @ ' + o.lr), slip.slice(0, 200));
+  near(bq.name + ' slip total', money((await txt('.paperbox .inv tr.tot')).split('Total')[1]), o.final);
+}
+await p.getByRole('button', { name: '← Back to grains' }).click();
+await p.fill('#q', 'masoor');
+eq('grain list search finds the typed name', await p.locator('table.list tbody tr').filter({ hasText: 'Masoor' }).count(), 1);
+await p.fill('#q', '');
+F8 = await fileNow();
+const ogS = sheetRows(F8.x['Grain sale statement.xlsx']['Other grains']);
+check('Other grains sale tab: the bill, its name in GRAIN, right total', ogS.length === 1 && ogS[0]['GRAIN'] === 'Masoor' && Math.abs(ogS[0]['FINAL AMOUNT (₹)'] - oOG.final) < 0.01, JSON.stringify(ogS[0] || {}).slice(0, 200));
+const ogP = sheetRows(F8.x['Grain purchase statement.xlsx']['Other grains']);
+check('Other grains purchase tab: both slips with their names', ogP.map(r => r['GRAIN']).join(',') === 'Moong,Makka', ogP.map(r => r['GRAIN']).join(','));
+ogP.forEach((r, i) => { near(ogBuys[i].name + ' final in Excel', r['FINAL AMOUNT (₹)'], oOGB[i].final); near(ogBuys[i].name + ' deduction rate in Excel', r['DEDUCTION RATE (kg/qtl)'], 0.3); near(ogBuys[i].name + ' labour rate in Excel', r['LABOUR RATE (₹/qtl)'], oOGB[i].lr); });
+check('master has Other grains sale and purchase tabs', 'Other grains sale' in F8.x['Master statement.xlsx'] && 'Other grains purchase' in F8.x['Master statement.xlsx']);
+check('saved bill keeps the typed name', F8.data.bills.some(b => b.grain === 'other' && b.grainOther === 'Masoor'));
+
+// bigger numbers: as big as the column allows; labels unchanged; every number inside its cell
+const numInfo = () => p.evaluate(() => {
+  const inv = document.querySelector('.paperbox .inv');
+  const cells = [...inv.querySelectorAll('tr.item td.c, tr.item td.rt, tr.tax td.ul div, tr.tot td:not(.tl):not(.deva), tr.adv td.rt')].filter(e => e.textContent.trim());
+  const over = cells.filter(e => { const r = document.createRange(); r.selectNodeContents(e); const cs = getComputedStyle(e); return r.getBoundingClientRect().width > e.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight) + 0.5; }).map(e => e.textContent);
+  const fs = (sel) => { const e = inv.querySelector(sel); return e ? parseFloat(getComputedStyle(e).fontSize) : 0; };
+  return { over, amount: fs('tr.item td:last-child'), qty: fs('tr.item td:nth-child(6)'), total: fs('tr.tot td:last-child'), totalLabel: fs('tr.tot td.tl'), desc: fs('tr.item td:nth-child(2)'), head: fs('thead th'), sizes: cells.map(e => parseFloat(getComputedStyle(e).fontSize)) };
+});
+await go('Aata'); await p.locator('table.list tbody tr').filter({ hasText: 'Number Test One' }).getByRole('button', { name: 'Open bill' }).click(); await p.waitForSelector('.paperbox .inv');
+let ni = await numInfo();
+check('amount prints bigger than before (16.5 px)', ni.amount >= 20, ni.amount);
+check('quantity prints bigger', ni.qty >= 20, ni.qty);
+check('total prints bigger than before (17 px)', ni.total >= 21, ni.total);
+eq('"Total" label unchanged (17 px)', ni.totalLabel, 17);
+eq('description unchanged (16 px)', ni.desc, 16);
+eq('every number fits its column', ni.over.join(' | '), '');
+// a very large bill: long numbers step down but still fit, and stay readable
+await go('Aata'); await p.getByRole('button', { name: 'New bill' }).click();
+await party({ name: 'Big Numbers Ltd', gst: '23ABCDE1234F1Z5' });
+await aataItem(0, { bags: 9999, size: 'other', kg: 47.25, rate: 99999.99 });
+await aataItem(1, { bags: 1200, size: 'LD', rate: 3150.5 });
+await p.fill('#f-freight', '12345.67'); await p.fill('#f-advance', '1000000');
+await p.getByRole('button', { name: 'Create bill' }).click(); await p.waitForSelector('.paperbox .inv');
+ni = await numInfo();
+eq('big bill: every number fits its column', ni.over.join(' | '), '');
+check('big bill: smallest number still readable (≥ 10 px)', Math.min(...ni.sizes) >= 10, ni.sizes.join(','));
+check('big bill fits on the slip', await fits());
+await p.locator('.paperbox .inv').screenshot({ path: OUT + '/BIL8-big-numbers.png' });
+await go('Aata'); await p.locator('table.list tbody tr').filter({ hasText: 'Number Test One' }).getByRole('button', { name: 'Open bill' }).click(); await p.waitForSelector('.paperbox .inv');
+await p.locator('.paperbox .inv').screenshot({ path: OUT + '/BIL8-numbers.png' });
 
 console.log('\nJS ERRORS:', errors.length ? errors : 'none');
 console.log(`\nRESULT: ${pass} passed, ${fail} failed`);
