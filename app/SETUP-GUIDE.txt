@@ -22,8 +22,8 @@ C. EVERY DAY
 - Bills save automatically into the Deo Ratan Billing folder; Google Drive uploads them when online.
 - In that folder:  bills-data.json (the bills - don't edit or delete)
                    Aata sale statement.xlsx (Aata bills, including chapad)
-                   Grain sale statement.xlsx (a tab for each grain: Wheat, Tewda, Chana, Soybean)
-                   Grain purchase statement.xlsx (a tab for each grain, plus Dhan)
+                   Grain sale statement.xlsx (a tab for each grain: Wheat, Tewda, Chana, Soybean, Other grains)
+                   Grain purchase statement.xlsx (a tab for each grain, plus Dhan and Other grains)
                    Master statement.xlsx (everything above in one file, as tabs)
                    All four update after every change - open them any time. The Aata page downloads the
                    Aata statement; the Grains page downloads the grain sale and purchase statements; both
@@ -51,9 +51,17 @@ C. EVERY DAY
   The customer's mobile number shows under their name in the lists.
 - Made a bill by mistake? Open it > "Delete this bill". A backup copy is saved first. If it was the
   latest bill, its number is used again for the next one.
+- Bill no.: the first box on every new bill shows the next number. Type another number if the bill
+  needs it (any number is accepted, even one already used). You can also change the number of a
+  finished bill: open it > Edit bill. The next new bill always continues from the highest number
+  (for example, after 2026-27/700 comes 701).
+- Numbers in the goods table of the bill (bags, weight, quantity, rate, amount, GST and totals)
+  print as large as their column allows. Very long amounts print a little smaller so they fit.
 - Three tabs: Aata (wheat flour bills, numbered 01, 02...), Grains, Parties.
-- Grains tab > New bill: pick the grain (Wheat, Tewda, Chana, Soybean, Dhan), then Sale or Purchase.
-  Dhan is purchase only.
+- Grains tab > New bill: pick the grain (Wheat, Tewda, Chana, Soybean, Dhan, Other grains), then Sale or Purchase.
+  Dhan is purchase only. For Other grains, type the grain's name (e.g. Masoor) in "Name of the grain":
+  it prints on the bill and goes on the Other grains tab of the statement. Other grains are sold by
+  quantity in quintal, and bought like wheat (300 g per quintal, labour by vehicle).
   * Sale (numbered GS-01, GS-02...): same as an Aata bill. Wheat is entered as no. of bags (30 kg, or Other
     to type the bag weight), like Aata; Tewda, Chana and Soybean as quantity in quintal. Wheat also needs its type (1544, Lokwan or Sharbati grades, Jhiri, Malwa, Shri Ram, Lota, or
     Others). A wheat line with type "Others" is sold loose like the other grains: quantity in quintal and rate
