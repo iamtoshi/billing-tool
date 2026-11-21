@@ -79,6 +79,10 @@ C. EVERY DAY
   Add old dues and record payments there; the PDF button opens that invoice or slip.
   To change a party's mobile number, use Edit number (in the Parties list, or at the top of their ledger). Their old bills stay as printed.
   When you create a bill with a name that is already saved under a different number, the app stops and asks you to change the name or replace the number.
+  Aata parties / Grain parties (above the list): show only parties with Aata bills, or only parties with grain sales or purchases.
+  A party who buys Aata and also deals in grain shows under both. All parties shows everyone.
+  Download parties statement: an Excel file of the parties you see (same Aata / Grain choice and search), with each party's
+  old dues, totals and balance, and a second tab "Ledgers" with every line of their ledgers. It goes to the Downloads folder.
 
 D. IF SOMETHING LOOKS WRONG
 - "Open my bills" screen: click it and choose Allow. Normal after Chrome restarts.
