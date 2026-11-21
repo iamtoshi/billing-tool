@@ -850,6 +850,80 @@ await p.locator('.paperbox .inv').screenshot({ path: OUT + '/BIL8-big-numbers.pn
 await go('Aata'); await p.locator('table.list tbody tr').filter({ hasText: 'Number Test One' }).getByRole('button', { name: 'Open bill' }).click(); await p.waitForSelector('.paperbox .inv');
 await p.locator('.paperbox .inv').screenshot({ path: OUT + '/BIL8-numbers.png' });
 
+/* ================================================================ */
+sec('BIL-9 · Parties: Aata / Grains filter and parties statement download');
+await go('Parties'); await H('Parties').waitFor();
+eq('filter buttons', (await p.locator('[data-ck]').allInnerTexts()).join('|'), 'All parties|Aata parties|Grain parties');
+eq('All parties is on by default', await p.locator('[data-ck="all"]').getAttribute('aria-pressed'), 'true');
+const nm9 = (v) => String(v || '').replace(/\s+/g, ' ').trim();   // the page shows runs of spaces as one
+const partyNames = async () => (await p.locator('table.list tbody tr td:first-child').allInnerTexts()).map(nm9);
+const allP = await partyNames();
+await p.locator('[data-ck="aata"]').click();
+const aataP = await partyNames();
+check('Aata: an Aata-only party shows', aataP.includes('Number Test One') && aataP.includes('Big Numbers Ltd'), aataP.join(', '));
+check('Aata: a grain-only party is hidden', !aataP.includes('Buyer soybean'), aataP.join(', '));
+check('Aata: a party with both (Gupta) shows', aataP.some(n => n.toLowerCase().startsWith('gupta kirana')), aataP.join(', '));
+await p.locator('[data-ck="grain"]').click();
+const grainP = await partyNames();
+check('Grains: a grain-only party shows', grainP.includes('Buyer soybean'), grainP.join(', '));
+check('Grains: an Aata-only party is hidden', !grainP.includes('Number Test One') && !grainP.includes('Big Numbers Ltd'), grainP.join(', '));
+check('Grains: a party with both (Gupta) shows', grainP.some(n => n.toLowerCase().startsWith('gupta kirana')), grainP.join(', '));
+// independent: from the saved file, group finished bills by party (mobile, else name; an edited number keeps its old keys)
+const D9 = (await readFolder()).data;
+const kindOfB = (b) => b.kind || 'aata';
+const alias9 = {}; Object.entries(D9.customers || {}).forEach(([k, r]) => (r.aliasKeys || []).forEach(a => { alias9[a] = k; }));
+const key9 = (b) => { const m = String(b.mobile || '').trim(), k = m ? 'm:' + m : 'n:' + String(b.party || '').trim().toLowerCase(); return alias9[k] || k; };
+const P9 = new Map();
+D9.bills.filter(b => b.status !== 'draft' && (b.party || '').trim()).sort((a, b) => (a.date || '').localeCompare(b.date || '')).forEach(b => {
+  const k = key9(b); if (!P9.has(k)) P9.set(k, { name: '', kinds: new Set() }); const x = P9.get(k); x.name = b.party; x.kinds.add(kindOfB(b) === 'aata' ? 'aata' : 'grain'); });
+Object.entries(D9.customers || {}).forEach(([k, r]) => { if (P9.has(k) && r.name) P9.get(k).name = P9.get(k).name || r.name; });
+const want9 = (kind) => [...P9.values()].filter(x => x.kinds.has(kind)).map(x => nm9(x.name)).sort().join('|');
+eq('Aata list = parties with an Aata bill', [...aataP].sort().join('|'), want9('aata'));
+eq('Grain list = parties with a grain bill', [...grainP].sort().join('|'), want9('grain'));
+check('every party is in All', [...aataP, ...grainP].every(n => allP.includes(n)));
+await p.locator('[data-ck="all"]').click();
+eq('All again shows every party', (await partyNames()).length, allP.length);
+// search and filter together
+await p.fill('#cq', 'Number Test'); await p.locator('[data-ck="grain"]').click();
+eq('search + Grain filter: no match message', await txt('table.list tbody'), 'No parties match this search.');
+await p.fill('#cq', ''); await p.locator('[data-ck="all"]').click();
+// the download: the parties on screen, figures the same as each ledger
+const readXlsx = async (dl) => { const b64 = fs.readFileSync(await dl.path()).toString('base64');
+  return p.evaluate((b) => { const wb = XLSX.read(Uint8Array.from(atob(b), c => c.charCodeAt(0)), { type: 'array' }); const o = {}; wb.SheetNames.forEach(s => { o[s] = XLSX.utils.sheet_to_json(wb.Sheets[s], { header: 1, defval: '' }); }); return o; }, b64); };
+let [dlP] = await Promise.all([p.waitForEvent('download'), p.getByRole('button', { name: 'Download parties statement' }).click()]);
+eq('download name', dlP.suggestedFilename(), 'PARTIES_STATEMENT.xlsx');
+await dlP.saveAs(OUT + '/PARTIES_STATEMENT.xlsx');
+let PX = await readXlsx(dlP);
+eq('tabs', Object.keys(PX).join('|'), 'Parties|Ledgers');
+check('title names the business', String(PX.Parties[0][0]).startsWith('DEO RATAN AGRO FOODS') && String(PX.Parties[0][0]).includes('PARTIES STATEMENT'), PX.Parties[0][0]);
+const pr = sheetRows(PX.Parties), prBody = pr.slice(0, -1), prTot = pr[pr.length - 1];
+eq('one row per party on screen', prBody.length, allP.length);
+check('total row at the bottom', String(prTot['PARTY NAME']).startsWith('TOTAL'), prTot['PARTY NAME']);
+near('total billed = sum of rows', prTot['TOTAL BILLED (₹)'], r2(prBody.reduce((t, r) => t + Number(r['TOTAL BILLED (₹)'] || 0), 0)));
+const nt1 = prBody.find(r => nm9(r['PARTY NAME']) === 'Number Test One');
+near('Number Test One billed = oracle (2 × 30 kg @ 3000)', nt1['TOTAL BILLED (₹)'], saleBill({ items: [{ bags: 2, size: '30kg', rate: 3000 }], exact: true }).final);
+eq('Number Test One deals in', nt1['DEALS IN'], 'Aata');
+eq('Gupta deals in both', (prBody.find(r => nm9(r['PARTY NAME']).toLowerCase().startsWith('gupta kirana')) || {})['DEALS IN'], 'Aata + Grains');
+for (const nm of ['Gupta KIRANA', 'Shri Balaji', 'Buyer soybean']) {
+  const row = prBody.find(r => nm9(r['PARTY NAME']).includes(nm)) || {};
+  await p.locator('table.list tbody tr', { hasText: nm }).first().getByRole('button', { name: 'Open ledger' }).click();
+  const scr = await txt('.ledsum .card.big'), b = money(await txt('.ledsum .card.big b'));
+  near(nm + ': balance same as ledger', row['BALANCE (₹)'], b);
+  eq(nm + ': balance status same as ledger', row['BALANCE STATUS'], scr.includes('to collect') ? 'To collect' : scr.includes('we owe') ? 'We owe' : 'Nothing due');
+  const ledN = await p.locator('table.ledger tbody tr').count();
+  eq(nm + ': ledger lines on the Ledgers tab', sheetRows(PX.Ledgers).filter(r => nm9(r['PARTY NAME']).includes(nm)).length, ledN);
+  await p.getByRole('button', { name: '← Parties' }).click();
+}
+await p.locator('[data-ck="aata"]').click();
+[dlP] = await Promise.all([p.waitForEvent('download'), p.getByRole('button', { name: 'Download parties statement' }).click()]);
+eq('Aata filter: download name', dlP.suggestedFilename(), 'AATA_PARTIES_STATEMENT.xlsx');
+PX = await readXlsx(dlP);
+const prA = sheetRows(PX.Parties).slice(0, -1).map(r => nm9(r['PARTY NAME']));
+eq('Aata filter: only the Aata parties', prA.join('|'), aataP.join('|'));
+check('Aata filter: title says so', String(PX.Parties[0][0]).includes('AATA PARTIES'));
+await p.screenshot({ path: OUT + '/BIL9-parties-aata.png' });
+await p.locator('[data-ck="all"]').click();
+
 console.log('\nJS ERRORS:', errors.length ? errors : 'none');
 console.log(`\nRESULT: ${pass} passed, ${fail} failed`);
 if (fails.length) console.log('FAILED:\n - ' + fails.join('\n - '));
