@@ -146,7 +146,7 @@ const warnIcon = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" st
 function pill(st){ return '<span class="pill '+st+'">'+(st==='overdue'?warnIcon:'')+STATUS_LABEL[st]+'</span>'; }
 
 /* ---------- state ---------- */
-const S = { bills:new Map(), customers:{}, cq:'', view:'loading', currentId:null, justMade:false, filter:{q:'', st:'all'}, gfilter:{q:'', st:'all', k:'all'}, form:null, formDirty:false, errors:{}, downloads:null };
+const S = { bills:new Map(), customers:{}, cq:'', ck:'all', view:'loading', currentId:null, justMade:false, filter:{q:'', st:'all'}, gfilter:{q:'', st:'all', k:'all'}, form:null, formDirty:false, errors:{}, downloads:null };
 const listOf = (b) => isGrain(b) ? 'glist' : 'list';
 async function saveBill(b){ b.updatedAt = new Date().toISOString(); S.bills.set(b.id, b); await persist(); }
 async function deleteBill(id){ S.bills.delete(id); await persist(); }
@@ -1581,23 +1581,90 @@ function ledgerLines(c){
   return rows;
 }
 const balText = (v) => v > 0.004 ? '₹'+inr(v)+' to collect' : v < -0.004 ? '₹'+inr(-v)+' we owe them' : 'Nothing due';
+/* a party's totals, as on their ledger: billed / received (sales side), bought / paid to them (purchase side) */
+function partyTotals(c){
+  const sum = (f) => r2(c.lines.filter(f).reduce((t,x) => t + (x.dr||x.cr||0), 0));
+  return {sales: sum(x => x.bill && kindOf(x.bill) !== 'gpurchase'), got: sum(x => x.cr && !(x.bill && kindOf(x.bill) === 'gpurchase')),
+          bought: sum(x => x.bill && kindOf(x.bill) === 'gpurchase'), paidOut: sum(x => x.dr && x.payBill && kindOf(x.payBill) === 'gpurchase')};
+}
+/* Aata / Grains filter on the Parties tab (BIL-9): a party is an Aata party if it has any Aata bill,
+   a Grain party if it has any grain sale or purchase. A party with both shows under both; one with only old dues only under All. */
+const PARTY_KINDS = [['all','All parties'], ['aata','Aata parties'], ['grain','Grain parties']];
+const partyHas = (c, k) => k === 'all' || c.bills.some(b => k === 'aata' ? kindOf(b) === 'aata' : kindOf(b) !== 'aata');
+const partyDeals = (c) => [partyHas(c,'aata') ? 'Aata' : '', partyHas(c,'grain') ? 'Grains' : ''].filter(Boolean).join(' + ') || 'Old dues only';
+function partyRows(){
+  const q = (S.cq||'').trim().toLowerCase(), k = S.ck || 'all';
+  const all = allCustomers().sort((a,b) => (b.balance - a.balance) || a.name.localeCompare(b.name));
+  return {all, rows: all.filter(c => partyHas(c, k) && (!q || c.name.toLowerCase().includes(q) || (c.mobile||'').includes(q) || (c.location||'').toLowerCase().includes(q)))};
+}
+/* Parties statement (BIL-9): the parties shown on screen (same Aata / Grains choice and search) as an Excel file,
+   with every party's ledger on a second tab. Same figures as the screen - nothing is worked out differently. */
+function buildPartiesXlsx(rows){
+  const thin = {style:'thin', color:{rgb:'808080'}}, border = {top:thin, bottom:thin, left:thin, right:thin};
+  const kindName = {all:'', aata:' · AATA PARTIES', grain:' · GRAIN PARTIES'}[S.ck || 'all'] || '';
+  const q = (S.cq||'').trim();
+  const sheet = (title, head, body, money, text, widths, totalRow) => {
+    const aoa = [[title], head].concat(body, totalRow ? [totalRow] : []);
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    for (let r = 0; r < aoa.length; r++) for (let col = 0; col < head.length; col++){
+      if (r === 0 && col > 0) continue;
+      const ref = XLSX.utils.encode_cell({r, c:col}), cell = ws[ref] || (ws[ref] = {t:'s', v:''});
+      if (r === 0){ cell.s = {font:{bold:true, sz:11}, alignment:{horizontal:'center', vertical:'center', wrapText:true}}; continue; }
+      if (r === 1){ cell.s = {border, font:{bold:true, sz:10}, fill:{patternType:'solid', fgColor:{rgb:'F2F2F2'}}, alignment:{horizontal:'center', vertical:'center', wrapText:true}}; continue; }
+      const st = {border, font:{bold: !!totalRow && r === aoa.length - 1}, alignment:{horizontal: text.has(col) ? 'left' : 'center', vertical:'center', wrapText: text.has(col)}};
+      if (cell.t === 'n') st.numFmt = money.has(col) ? INR_FMT : '0';
+      cell.s = st;
+    }
+    ws['!merges'] = [{s:{r:0,c:0}, e:{r:0,c:head.length-1}}];
+    ws['!cols'] = widths.map(w => ({wch:w}));
+    ws['!rows'] = [{hpt:50}, {hpt:34}];
+    return ws;
+  };
+  const stamp = 'AS ON '+dmy(todayISO())+(q ? ' · SEARCH: '+q.toUpperCase() : '');
+  const status = (v) => v > 0.004 ? 'To collect' : v < -0.004 ? 'We owe' : 'Nothing due';
+  const body = rows.map(c => { const t = partyTotals(c), r = custRec(c.key) || {};
+    return [c.name, c.mobile||'', c.location||'', c.gst||'', partyDeals(c), c.bills.length, dmy(c.last)||'', num(r.opening), t.sales, t.got, t.bought, t.paidOut, r2(Math.abs(c.balance)), status(c.balance)]; });
+  const tot = (i) => r2(body.reduce((s, x) => s + x[i], 0));
+  const collect = r2(rows.reduce((s, c) => s + (c.balance > 0.004 ? c.balance : 0), 0)), owe = r2(rows.reduce((s, c) => s + (c.balance < -0.004 ? -c.balance : 0), 0));
+  const totalRow = ['TOTAL ('+rows.length+' parties)', '', '', '', '', tot(5), '', tot(7), tot(8), tot(9), tot(10), tot(11), '', 'To collect ₹'+inr(collect)+' · We owe ₹'+inr(owe)];
+  const head1 = ['PARTY NAME','MOBILE','LOCATION','GST NO.','DEALS IN','ENTRIES','LAST ENTRY','OLD DUES (₹)','TOTAL BILLED (₹)','TOTAL RECEIVED (₹)','BOUGHT FROM THEM (₹)','PAID TO THEM (₹)','BALANCE (₹)','BALANCE STATUS'];
+  const ws1 = sheet(HEAD+'PARTIES STATEMENT'+kindName+'\n'+stamp, head1, body, new Set([7,8,9,10,11,12]), new Set([0,2,3,13]), [30,12,16,17,12,9,11,13,14,14,14,13,13,26], totalRow);
+  const led = [];
+  rows.forEach(c => c.lines.forEach(x => led.push([c.name, c.mobile||'', dmy(x.date)||'', x.text, x.dr || '', x.cr || '', r2(Math.abs(x.bal)), x.bal > 0.004 ? 'To collect' : x.bal < -0.004 ? 'We owe' : 'Nothing due'])));
+  const ws2 = sheet(HEAD+'PARTY LEDGERS'+kindName+'\n'+stamp, ['PARTY NAME','MOBILE','DATE','DETAILS','DEBIT (Dr) ₹','CREDIT (Cr) ₹','BALANCE (₹)','BALANCE STATUS'], led, new Set([4,5,6]), new Set([0,3,7]), [30,12,11,52,14,14,14,13]);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws1, 'Parties'); XLSX.utils.book_append_sheet(wb, ws2, 'Ledgers');
+  return XLSX.write(wb, {bookType:'xlsx', type:'array', bookSST:true});
+}
+async function downloadParties(e){
+  const btn = e.currentTarget; if (!window.XLSX){ toast('The spreadsheet tool didn’t load. Reload the page and try again.'); return; }
+  btn.disabled = true;
+  try {
+    const {rows} = partyRows();
+    const name = {all:'PARTIES_STATEMENT', aata:'AATA_PARTIES_STATEMENT', grain:'GRAIN_PARTIES_STATEMENT'}[S.ck || 'all'] + '.xlsx';
+    await S.downloads.save({filename:name, data:new Blob([buildPartiesXlsx(rows)])});
+    toast('Parties statement downloaded');
+  } catch(err){ handleDlErr(err); }
+  btn.disabled = false;
+}
 function oldDuesLeft(key){ const r = custRec(key) || {}; return r2(num(r.opening) - (r.payments||[]).reduce((t,p) => t + num(p.amount), 0)); }
 
 function renderCustomers(){
-  const q = (S.cq||'').trim().toLowerCase();
-  const all = allCustomers().sort((a,b) => (b.balance - a.balance) || a.name.localeCompare(b.name));
-  const rows = all.filter(c => !q || c.name.toLowerCase().includes(q) || (c.mobile||'').includes(q) || (c.location||'').toLowerCase().includes(q));
+  const {all, rows} = partyRows(), k = S.ck || 'all';
+  const kinds = PARTY_KINDS.map(x => '<button type="button" class="chip" data-ck="'+x[0]+'" aria-pressed="'+(k===x[0])+'">'+x[1]+'</button>').join('');
   $('#view').innerHTML =
     '<div class="head"><div><h1>Parties</h1><p class="sub">Customers and sellers. Open a party to see their ledger: every bill, purchase and payment, with the balance after each.</p></div>'+
-    '<div class="acts"><button class="btn" type="button" id="addOld">+ Add old dues</button></div></div>'+
+    '<div class="acts">'+(S.downloads ? '<button class="btn" type="button" id="pxl">Download parties statement</button>' : '')+'<button class="btn" type="button" id="addOld">+ Add old dues</button></div></div>'+
     '<div class="filters"><label for="cq" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)">Search parties</label>'+
-    '<input id="cq" class="search" type="search" placeholder="Search by name, mobile or location" value="'+esc(S.cq||'')+'"></div>'+
+    '<input id="cq" class="search" type="search" placeholder="Search by name, mobile or location" value="'+esc(S.cq||'')+'"><div class="chips" role="group" aria-label="Aata or grain parties">'+kinds+'</div></div>'+
     '<div class="tablebox"><table class="list"><thead><tr><th>Party</th><th>Mobile</th><th>Location</th><th class="r">Entries</th><th>Last entry</th><th class="r">Balance ₹</th><th><span style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)">Actions</span></th></tr></thead><tbody>'+
     (rows.length ? rows.map(c => '<tr><td>'+esc(c.name)+'</td><td class="num">'+esc(c.mobile||'—')+'</td><td>'+esc(c.location||'—')+'</td><td class="r num">'+c.bills.length+'</td><td>'+esc(dmy(c.last)||'—')+'</td>'+
       '<td class="r num'+(c.balance > 0.004 ? ' owe' : '')+'">'+inr(Math.abs(c.balance))+(c.balance > 0.004 ? ' <span class="baltag">to collect</span>' : c.balance < -0.004 ? ' <span class="baltag pay">we owe</span>' : '')+'</td><td><div class="rowacts"><button class="btn small" type="button" data-led="'+esc(c.key)+'">Open ledger</button>'+(num((custRec(c.key)||{}).opening) ? '<span class="oldtag" title="Old dues are already added. To change them, open the ledger.">✓ Old dues added</span>' : '<button class="btn small" type="button" data-old="'+esc(c.key)+'">Add old dues</button>')+'<button class="btn small" type="button" data-mob="'+esc(c.key)+'">'+(c.mobile ? 'Edit number' : 'Add number')+'</button></div></td></tr>').join('')
-      : '<tr><td colspan="7" class="empty">'+(all.length ? 'No parties match this search.' : 'Parties appear here after their first bill or purchase.')+'</td></tr>')+
+      : '<tr><td colspan="7" class="empty">'+(all.length ? (k !== 'all' && !(S.cq||'').trim() ? 'No '+(k === 'aata' ? 'Aata' : 'grain')+' parties yet.' : 'No parties match this search.') : 'Parties appear here after their first bill or purchase.')+'</td></tr>')+
     '</tbody></table></div>';
   $('#cq').oninput = (e) => { S.cq = e.target.value; const pos = e.target.selectionStart; renderCustomers(); const el = $('#cq'); el.focus(); el.setSelectionRange(pos,pos); };
+  document.querySelectorAll('[data-ck]').forEach(ch => ch.onclick = () => { S.ck = ch.dataset.ck; renderCustomers(); });
+  if ($('#pxl')) $('#pxl').onclick = (e) => downloadParties(e);
   document.querySelectorAll('[data-led]').forEach(b => b.onclick = () => go('ledger', b.dataset.led));
   $('#addOld').onclick = () => openOpening(null);
   document.querySelectorAll('[data-mob]').forEach(b => b.onclick = () => { const c = all.find(x => x.key === b.dataset.mob); if (c) openMobile(c, () => renderCustomers()); });
@@ -1608,9 +1675,7 @@ function renderLedger(){
   const c = allCustomers().find(x => x.key === S.currentId);
   if (!c){ go('customers'); return; }
   const r = custRec(c.key) || {};
-  const sum = (f) => r2(c.lines.filter(f).reduce((t,x) => t + (x.dr||x.cr||0), 0));
-  const sales = sum(x => x.bill && kindOf(x.bill) !== 'gpurchase'), got = sum(x => x.cr && !(x.bill && kindOf(x.bill) === 'gpurchase'));
-  const bought = sum(x => x.bill && kindOf(x.bill) === 'gpurchase'), paidOut = sum(x => x.dr && x.payBill && kindOf(x.payBill) === 'gpurchase');
+  const {sales, got, bought, paidOut} = partyTotals(c);
   const hasBuy = c.bills.some(b => kindOf(b) === 'gpurchase'), hasSell = c.bills.some(b => kindOf(b) !== 'gpurchase') || !hasBuy;
   $('#view').innerHTML =
     '<div class="head"><div><button class="btn link" type="button" id="back" style="margin-left:-4px">← Parties</button>'+
